@@ -179,8 +179,12 @@ else
     curl -fL --retry 3 --progress-bar -o "$tmpdir/pkg.tar.gz" "$UP_URL" || die "Gagal mengunduh $UP_URL"
   fi
   tar -xzf "$tmpdir/pkg.tar.gz" -C "$tmpdir" || die "Arsip rusak."
-  [ -f "$tmpdir/opencode" ] || die "Isi arsip tidak sesuai."
-  chmod 755 "$tmpdir/opencode"
+  # nama file di dalam arsip bisa "opencode" (rilisan upstream) atau
+  # "opencode.real" (hasil backup/repack repo ini)
+  if   [ -f "$tmpdir/opencode" ];      then BIN="$tmpdir/opencode"
+  elif [ -f "$tmpdir/opencode.real" ]; then BIN="$tmpdir/opencode.real"
+  else die "Isi arsip tidak sesuai (opencode tidak ditemukan di dalam arsip)."; fi
+  chmod 755 "$BIN"
 
   ts="$(date +%Y%m%d-%H%M%S)"
   if [ -f "$PAYLOAD" ]; then
@@ -188,7 +192,7 @@ else
     tar -czf "$BACKUP_DIR/opencode-${CUR:-old}-$ts.tar.gz" -C "$PAYLOAD_DIR" opencode.real
     cp -f "$PAYLOAD" "$tmpdir/opencode.real.bak"
   fi
-  cp -f "$tmpdir/opencode" "$PAYLOAD.new" && chmod 755 "$PAYLOAD.new" && mv -f "$PAYLOAD.new" "$PAYLOAD"
+  cp -f "$BIN" "$PAYLOAD.new" && chmod 755 "$PAYLOAD.new" && mv -f "$PAYLOAD.new" "$PAYLOAD"
   [ -x "$LAUNCHER" ] || install_our_launcher
   prune_backups
 fi
