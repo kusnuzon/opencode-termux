@@ -11,6 +11,9 @@ curl -fsSL https://raw.githubusercontent.com/kusnuzon/opencode-termux/main/insta
 
 Selesai → `opencode` langsung bisa dipakai.
 
+> Kalau mau mengirim opsi lewat pipe, pakai `bash -s -- <opsi>`:
+> `curl -fsSL https://raw.githubusercontent.com/kusnuzon/opencode-termux/main/install.sh | bash -s -- --upgrade`
+
 ---
 
 ## Kenapa butuh repo ini?
