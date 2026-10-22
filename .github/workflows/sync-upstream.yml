@@ -1,0 +1,72 @@
+name: Sync upstream opencode
+
+# Memantau versi resmi opencode (anomalyco/opencode) lalu memirror payload
+# linux-arm64 + launcher Termux ke Release repo ini, sehingga
+# `install.sh` selalu punya sumber unduhan yang sinkron dengan upstream.
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag upstream (opsional, mis. v1.19.3). Kosongkan = pakai latest.'
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: meta
+        name: Tentukan versi upstream
+        run: |
+          tag="${{ github.event.inputs.tag }}"
+          if [ -z "$tag" ]; then
+            tag=$(curl -fsSL https://api.github.com/repos/anomalyco/opencode/releases/latest | jq -r .tag_name)
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "ver=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Unduh binary upstream (linux-arm64 / glibc)
+        run: |
+          curl -fL --retry 3 --retry-delay 5 \
+            -o opencode-linux-arm64.tar.gz \
+            "https://github.com/anomalyco/opencode/releases/download/${{ steps.meta.outputs.tag }}/opencode-linux-arm64.tar.gz"
+          ls -la opencode-linux-arm64.tar.gz
+
+      - name: Perbarui file VERSION
+        run: |
+          echo "${{ steps.meta.outputs.ver }}" > VERSION
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add VERSION
+          git diff --staged --quiet || git commit -m "chore: upstream opencode ${{ steps.meta.outputs.ver }}"
+          git push
+
+      - name: Terbitkan Release mirror
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: opencode-termux-${{ steps.meta.outputs.ver }}
+          name: opencode ${{ steps.meta.outputs.ver }} (Termux / Android)
+          body: |
+            Mirror payload opencode ${{ steps.meta.outputs.ver }} untuk Termux/Android.
+
+            - Binary: `opencode-linux-arm64.tar.gz` (build glibc resmi dari anomalyco/opencode)
+            - Launcher: `opencode-launcher` (menjalankan binary lewat loader glibc Termux)
+
+            Pasang di Termux:
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/kusnuzon/opencode-termux/main/install.sh | bash
+            ```
+          prerelease: false
+          files: |
+            opencode-linux-arm64.tar.gz
+            opencode-launcher
+
+      - name: Ringkasan
+        run: echo "Mirror opencode ${{ steps.meta.outputs.ver }} terbit."
