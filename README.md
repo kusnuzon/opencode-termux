@@ -45,6 +45,9 @@ Yang dikerjakan otomatis:
 4. `apt-mark hold opencode` → supaya `pkg upgrade` tidak menimpa binary yang baru dipasang
 5. Unduh payload versi terbaru → pasang → **verifikasi** `opencode --version`
 6. Kalau verifikasi gagal → payload lama otomatis dikembalikan (rollback)
+7. Pasang plugin `memory.js` + `session-title.js`, lalu template memori
+   (`MEMORY.md`, `AGENTS.md`, `RECENT.md`) dan hook `~/.bashrc` — **file yang
+   sudah ada tidak ditimpa**. Lewati dengan `--no-plugin` / `--no-memory`.
 
 Cek hasilnya:
 
@@ -54,6 +57,24 @@ opencode               # mulai sesi
 ```
 
 > Butuh ±500 MB (runtime glibc) + ±180 MB (payload opencode).
+
+### Memori antar sesi (default)
+
+Tanpa opsi tambahan, installer sudah memasang:
+
+| File | Isi |
+|---|---|
+| `plugins/memory.js` → `~/.config/opencode/plugins/` | tool `memory_save` (V1+V2) |
+| `plugins/session-title.js` → `~/.config/opencode/plugins/` | judul sesi otomatis tanpa memanggil model |
+| `memory/MEMORY.md` → `~/.config/opencode/MEMORY.md` | template kosong, diisi lewat `memory_save` |
+| `memory/AGENTS.md` → `~/.config/opencode/AGENTS.md` | template aturan kerja |
+| `memory/opencode.jsonc` → `~/.config/opencode/opencode.jsonc` | `instructions`: MEMORY.md + RECENT.md |
+| `plugins/session-digest.py` → `~/.config/opencode/bin/` | pembuat `RECENT.md` dari DB V1 + V2 |
+
+`MEMORY.md` menyimpan fakta jangka panjang dan `RECENT.md` ringkasan sesi
+terakhir; keduanya dimuat otomatis di awal sesi baru. Data lama tidak hilang —
+installer melewati file memori yang sudah ada. Untuk melewati pemasangan:
+`--no-memory` (template) atau `--no-plugin` (plugin).
 
 ---
 
@@ -137,7 +158,9 @@ opencode --version
 
 | File | Fungsi |
 |---|---|
-| `install.sh` | Installer utama: deps → glibc runtime → launcher → payload terbaru → verifikasi |
+| `install.sh` | Installer utama: deps → glibc runtime → launcher → payload terbaru → verifikasi → plugin/memori |
+| `plugins/` | `memory.js`, `session-title.js`, `session-digest.py` |
+| `memory/` | Template `MEMORY.md`, `AGENTS.md`, `opencode.jsonc` |
 | `upgrade.sh` | Alias `install.sh --upgrade` |
 | `uninstall.sh` | Hapus opencode (opsional `--purge` untuk paket glibc juga) |
 | `opencode-launcher` | Launcher: menjalankan binary glibc lewat loader glibc Termux |

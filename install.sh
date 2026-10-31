@@ -8,6 +8,9 @@
 #   --upgrade     samakan dengan versi terbaru (default juga melakukan ini)
 #   --version X   pasang versi tertentu, mis. --version 1.19.3
 #   --dry-run     tampilkan rencana tanpa mengubah apa pun
+#   --no-plugin   jangan pasang plugin bawaan (memory_save + judul sesi)
+#   --no-memory   jangan pasang template memori/AGENTS/RECENT + hook ~/.bashrc
+#   --with-memory (default) pasang memori pribadi + ringkasan sesi otomatis
 #
 # Kenapa perlu script ini: repo resmi anomalyco/opencode tidak punya build
 # android/arm64 dan `npm i -g opencode-ai` gagal di Termux. Yang dipakai:
@@ -26,6 +29,8 @@ ASSET="opencode-linux-arm64.tar.gz"
 MODE="install"
 TARGET=""
 KEEP_BACKUPS=2
+NO_PLUGIN=0
+WITH_MEMORY=1
 
 c_ok=$'\033[1;32m'; c_warn=$'\033[1;33m'; c_err=$'\033[1;31m'
 c_b=$'\033[1;36m'; c_off=$'\033[0m'
@@ -34,7 +39,7 @@ say()  { printf '%s\n' "$*"; }
 die()  { printf '%s%s%s\n' "$c_err" "$*" "$c_off" >&2; exit 1; }
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
 
-usage() { sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; }
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -42,6 +47,9 @@ while [ $# -gt 0 ]; do
     --upgrade)  MODE="upgrade"; shift ;;
     --dry-run)  MODE="dry-run"; shift ;;
     --version)  TARGET="${2:-}"; shift 2 ;;
+    --no-plugin) NO_PLUGIN=1; shift ;;
+    --no-memory) WITH_MEMORY=0; shift ;;
+    --with-memory) WITH_MEMORY=1; shift ;;
     -h|--help)  usage; exit 0 ;;
     *) die "Argumen tidak dikenal: $1" ;;
   esac
@@ -59,6 +67,17 @@ api_get() {
   else
     curl -fsSL -H 'Accept: application/vnd.github+json' "$1"
   fi
+}
+
+# fetch_file <path-di-repo> <tujuan> — pakai API (selalu segar), fallback raw.
+fetch_file() {
+  local path="$1" dest="$2"
+  mkdir -p "$(dirname "$dest")"
+  if curl -fsSL --max-time 60 -H 'Accept: application/vnd.github.raw' \
+    "https://api.github.com/repos/$REPO/contents/$path?ref=main" -o "$dest" 2>/dev/null; then
+    return 0
+  fi
+  curl -fsSL --max-time 60 -o "$dest" "https://raw.githubusercontent.com/$REPO/main/$path"
 }
 
 latest_tag() {
@@ -130,21 +149,23 @@ if [ "$MODE" = "dry-run" ]; then
   say "   mirror : https://github.com/$REPO/releases/download/opencode-termux-$LATEST_NOV/$ASSET"
   say "   upstream: https://github.com/$UPSTREAM/releases/download/$LATEST/$ASSET"
   say "5. pasang ke $PAYLOAD + verifikasi 'opencode --version'"
+  [ "$NO_PLUGIN" -eq 0 ] && say "6. pasang plugin bawaan (memory_save + judul sesi)"
+  [ "$WITH_MEMORY" -eq 1 ] && say "   pasang MEMORY.md/AGENTS.md/RECENT.md + hook ~/.bashrc"
   say "Status sekarang: ${CUR:-tidak ada} | target: $LATEST_NOV"
   exit 0
 fi
 
-step "1/5 Paket dasar"
+step "1/6 Paket dasar"
 pkg update -y
 pkg install -y curl tar ca-certificates jq
 
-step "2/5 Runtime glibc (wajib: binary opencode = glibc, Android = bionic)"
+step "2/6 Runtime glibc (wajib: binary opencode = glibc, Android = bionic)"
 pkg install -y glibc-repo || true
 pkg update -y
 pkg install -y glibc termux-exec-glibc
 have_loader || die "Loader glibc tidak ditemukan: $PREFIX/glibc/lib/ld-linux-aarch64.so.1"
 
-step "3/5 Launcher"
+step "3/6 Launcher"
 if dpkg -s opencode >/dev/null 2>&1 && [ -x "$LAUNCHER" ]; then
   say "Launcher dari paket dpkg (repo termuxvoid) dipakai."
   apt-mark hold opencode || true
@@ -163,10 +184,10 @@ else
 fi
 
 if [ "${CUR:-}" = "$LATEST_NOV" ] && [ -x "$PAYLOAD" ]; then
-  step "4/5 Payload"
+  step "4/6 Payload"
   say "${c_ok}opencode $CUR sudah versi terbaru ($LATEST_NOV). Tidak ada yang diubah.${c_off}"
 else
-  step "4/5 Unduh payload versi $LATEST_NOV"
+  step "4/6 Unduh payload versi $LATEST_NOV"
   mkdir -p "$BACKUP_DIR" "$PAYLOAD_DIR"
   tmpdir="$(mktemp -d "$PREFIX/tmp/oc-install.XXXXXX")"
   trap 'rm -rf "$tmpdir"' EXIT
@@ -197,7 +218,7 @@ else
   prune_backups
 fi
 
-step "5/5 Verifikasi"
+step "5/6 Verifikasi"
 GOT="$(installed_version)"; [ -n "$GOT" ] || GOT="$(payload_version)"
 if [ "$GOT" != "$LATEST_NOV" ]; then
   if [ -f "$tmpdir/opencode.real.bak" ]; then
@@ -206,6 +227,93 @@ if [ "$GOT" != "$LATEST_NOV" ]; then
   fi
   die "Verifikasi gagal (dapat: ${GOT:-kosong}, harusnya: $LATEST_NOV)."
 fi
+
+step "6/6 Plugin & ingatan lintas sesi"
+OC_DIR="$HOME/.config/opencode"
+PLUGIN_DIR="$OC_DIR/plugins"
+STAGE="$SELF_DIR"
+[ -n "$STAGE" ] || STAGE="$(mktemp -d "$PREFIX/tmp/oc-mem.XXXXXX")"
+
+install_plugin() {
+  local name="$1" src="$STAGE/plugins/$1" dst="$PLUGIN_DIR/$1" backup
+  if [ ! -s "$src" ]; then
+    fetch_file "plugins/$name" "$src" || { say "${c_warn}gagal mengunduh plugins/$name${c_off}"; return 1; }
+  fi
+  if [ -f "$dst" ] && ! cmp -s "$src" "$dst"; then
+    if [ "$name" = "memory.js" ]; then
+      backup="$dst.v1.bak"
+      [ -e "$backup" ] && backup="$dst.v1.$(date +%Y%m%d%H%M%S).bak"
+    else
+      backup="$dst.bak-$(date +%Y%m%d%H%M%S)"
+    fi
+    cp "$dst" "$backup"
+    say "Plugin lama dicadangkan ke $backup"
+  fi
+  cp "$src" "$dst"
+  chmod 600 "$dst" 2>/dev/null || true
+  say "Plugin terpasang: $dst"
+}
+
+if [ "$NO_PLUGIN" -eq 1 ]; then
+  say "Plugin bawaan dilewati (--no-plugin)"
+else
+  mkdir -p "$PLUGIN_DIR"
+  install_plugin memory.js || true
+  install_plugin session-title.js || true
+fi
+
+if [ "$WITH_MEMORY" -eq 1 ]; then
+  mkdir -p "$OC_DIR/bin"
+  DIGEST="$OC_DIR/bin/session-digest.py"
+  DIGEST_SRC="$STAGE/plugins/session-digest.py"
+  if [ ! -s "$DIGEST_SRC" ]; then
+    fetch_file "plugins/session-digest.py" "$DIGEST_SRC" || say "${c_warn}gagal mengunduh session-digest.py${c_off}"
+  fi
+  if [ -s "$DIGEST_SRC" ]; then
+    cp "$DIGEST_SRC" "$DIGEST"
+    sed -i "1s|^#!.*|#!$PREFIX/bin/python3|" "$DIGEST"
+    chmod 755 "$DIGEST"
+    say "Generator ringkasan sesi: $DIGEST"
+  fi
+
+  # Template hanya dipasang kalau belum ada — memori user tidak boleh tertimpa.
+  for f in MEMORY.md AGENTS.md opencode.jsonc; do
+    if [ -f "$OC_DIR/$f" ]; then
+      say "sudah ada, dilewati: $OC_DIR/$f"
+      continue
+    fi
+    src="$STAGE/memory/$f"
+    if [ ! -s "$src" ]; then
+      fetch_file "memory/$f" "$src" || { say "${c_warn}gagal mengambil memory/$f${c_off}"; continue; }
+    fi
+    cp "$src" "$OC_DIR/$f"
+    if [ "$f" = "opencode.jsonc" ]; then
+      sed -i "s|/data/data/com.termux/files/home|$HOME|g" "$OC_DIR/$f"
+    fi
+  done
+  [ -f "$OC_DIR/RECENT.md" ] || printf '# RECENT\n\nBelum ada sesi tercatat.\n' >"$OC_DIR/RECENT.md"
+  if [ -x "$DIGEST" ]; then
+    python3 "$DIGEST" >/dev/null 2>&1 || true
+  fi
+  say "Memori/template, aturan, dan instructions siap di $OC_DIR"
+
+  if ! grep -q "_oc_refresh_digest" "$HOME/.bashrc" 2>/dev/null; then
+    [ -f "$HOME/.bashrc" ] || : >"$HOME/.bashrc"
+    cat >>"$HOME/.bashrc" <<'EOS'
+
+# --- segarkan ringkasan sesi sebelum opencode dibuka (install.sh) ---
+_oc_refresh_digest() {
+  [ -x "$HOME/.config/opencode/bin/session-digest.py" ] || return 0
+  python3 "$HOME/.config/opencode/bin/session-digest.py" >/dev/null 2>&1
+}
+opencode() { _oc_refresh_digest; command opencode "$@"; }
+opencode-v2() { _oc_refresh_digest; command opencode-v2 "$@"; }
+EOS
+    say "~/.bashrc: ringkasan sesi disegarkan otomatis"
+  fi
+fi
+[ -n "$SELF_DIR" ] || rm -rf "$STAGE"
+
 say "${c_ok}opencode $GOT siap dipakai.${c_off}"
 say ""
 say "Coba sekarang:   opencode"
