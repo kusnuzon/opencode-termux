@@ -266,6 +266,13 @@ elif command -v pkg >/dev/null 2>&1; then
   fi
   apt_update || say "! peringatan: 'pkg update' gagal setelah menambah repo termuxvoid"
   pkg install -y opencode || true
+  # Repo termuxvoid tidak menandatangani InRelease -> setiap `pkg update`
+  # mencetak "NO_PUBKEY". Setelah paketnya terpasang, repo dilepas lagi supaya
+  # update berikutnya bersih (paket + apt-mark hold tetap berlaku).
+  if dpkg -s opencode >/dev/null 2>&1; then
+    rm -f "$TL"
+    apt_update || true
+  fi
   if [ ! -x "$LAUNCHER" ]; then
     say "Paket termuxvoid tidak tersedia, memakai launcher bawaan repo ini."
     install_our_launcher
