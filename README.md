@@ -39,8 +39,15 @@ curl -fsSL https://raw.githubusercontent.com/kusnuzon/opencode-termux/main/insta
 
 Yang dikerjakan otomatis:
 
-1. `pkg install curl tar ca-certificates jq`
-2. `pkg install glibc-repo` + `glibc` + `termux-exec-glibc` (runtime glibc — wajib)
+1. Dependensi dasar dipasang **di awal** (Termux baru langsung siap):
+   `curl tar unzip gzip coreutils ca-certificates jq python git sqlite wget
+   openssh gh nodejs yq shellcheck ncdu htop`, lalu opsional `tesseract
+   chromium` (+ `x11-repo`). Opsional yang gagal hanya jadi peringatan;
+   lewati dengan `--no-extra`.
+2. `pkg install glibc-repo` + `glibc` + `termux-exec-glibc` (runtime glibc — wajib).
+   Kalau paket glibc merusak `curl` (`cannot locate symbol SSL_set_quic_…`),
+   `curl`/`libcurl`/`openssl` otomatis dipasang ulang dan unduhan punya
+   cadangan `wget`/`python`.
 3. Launcher: pakai paket dpkg `opencode` (repo termuxvoid) **atau** launcher bawaan repo ini, mana yang tersedia
 4. `apt-mark hold opencode` → supaya `pkg upgrade` tidak menimpa binary yang baru dipasang
 5. Unduh payload versi terbaru → pasang → **verifikasi** `opencode --version`

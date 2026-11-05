@@ -9,6 +9,7 @@
 #   --version X   pasang versi tertentu, mis. --version 1.19.3
 #   --dry-run     tampilkan rencana tanpa mengubah apa pun
 #   --no-plugin   jangan pasang plugin bawaan (memory_save + judul sesi)
+#   --no-extra    jangan pasang paket opsional besar (tesseract, chromium)
 #   --no-memory   jangan pasang template memori/AGENTS/RECENT + hook ~/.bashrc
 #   --with-memory (default) pasang memori pribadi + ringkasan sesi otomatis
 #
@@ -30,6 +31,7 @@ MODE="install"
 TARGET=""
 KEEP_BACKUPS=2
 NO_PLUGIN=0
+NO_EXTRA=0
 WITH_MEMORY=1
 
 c_ok=$'\033[1;32m'; c_warn=$'\033[1;33m'; c_err=$'\033[1;31m'
@@ -48,6 +50,7 @@ while [ $# -gt 0 ]; do
     --dry-run)  MODE="dry-run"; shift ;;
     --version)  TARGET="${2:-}"; shift 2 ;;
     --no-plugin) NO_PLUGIN=1; shift ;;
+    --no-extra) NO_EXTRA=1; shift ;;
     --no-memory) WITH_MEMORY=0; shift ;;
     --with-memory) WITH_MEMORY=1; shift ;;
     -h|--help)  usage; exit 0 ;;
@@ -69,15 +72,47 @@ api_get() {
   fi
 }
 
+# download_url <url> <dest> [accept] — curl → wget → python.
+# Latar: paket glibc di Termux bisa membuat curl mati dengan
+# "cannot locate symbol SSL_set_quic_tls_early_data_enabled"; tanpa cadangan
+# ini seluruh unduhan berikutnya ikut gagal.
+download_url() {
+  local url="$1" dest="$2" accept="${3:-}" part="$2.part"
+  mkdir -p "$(dirname "$dest")" || return 1
+  rm -f "$part"
+  if [ -n "$accept" ]; then
+    curl -fsSL --max-time 300 -H "Accept: $accept" "$url" -o "$part" 2>/dev/null
+  else
+    curl -fsSL --max-time 300 "$url" -o "$part" 2>/dev/null
+  fi
+  if [ -s "$part" ]; then mv -f "$part" "$dest"; return 0; fi
+  rm -f "$part"
+  if command -v wget >/dev/null 2>&1 && wget -q --timeout=60 -O "$part" "$url" >/dev/null 2>&1 && [ -s "$part" ]; then
+    mv -f "$part" "$dest"; return 0
+  fi
+  rm -f "$part"
+  if command -v python >/dev/null 2>&1; then
+    python - "$url" "$part" "$accept" <<'PY' >/dev/null 2>&1 || true
+import sys, urllib.request
+url, dest, accept = sys.argv[1], sys.argv[2], (sys.argv[3] if len(sys.argv) > 3 else "")
+req = urllib.request.Request(url, headers={"User-Agent": "opencode-termux"})
+if accept:
+    req.add_header("Accept", accept)
+open(dest, "wb").write(urllib.request.urlopen(req, timeout=60).read())
+PY
+    [ -s "$part" ] && { mv -f "$part" "$dest"; return 0; }
+  fi
+  rm -f "$part"
+  return 1
+}
+
 # fetch_file <path-di-repo> <tujuan> — pakai API (selalu segar), fallback raw.
 fetch_file() {
   local path="$1" dest="$2"
   mkdir -p "$(dirname "$dest")"
-  if curl -fsSL --max-time 60 -H 'Accept: application/vnd.github.raw' \
-    "https://api.github.com/repos/$REPO/contents/$path?ref=main" -o "$dest" 2>/dev/null; then
-    return 0
-  fi
-  curl -fsSL --max-time 60 -o "$dest" "https://raw.githubusercontent.com/$REPO/main/$path"
+  download_url "https://api.github.com/repos/$REPO/contents/$path?ref=main" "$dest" \
+    'application/vnd.github.raw' && return 0
+  download_url "https://raw.githubusercontent.com/$REPO/main/$path" "$dest"
 }
 
 latest_tag() {
@@ -107,7 +142,7 @@ install_our_launcher() {
     src="$SELF_DIR/opencode-launcher"
   else
     src="$(mktemp)"
-    curl -fsSL -o "$src" "https://raw.githubusercontent.com/$REPO/main/opencode-launcher" ||
+    download_url "https://raw.githubusercontent.com/$REPO/main/opencode-launcher" "$src" ||
       die "Gagal mengunduh opencode-launcher dari repo."
   fi
   mkdir -p "$(dirname "$LAUNCHER")"
@@ -119,6 +154,48 @@ install_our_launcher() {
 prune_backups() {
   ls -1t "$BACKUP_DIR"/opencode-[0-9]*.tar.gz 2>/dev/null | tail -n "+$((KEEP_BACKUPS + 1))" |
     while read -r f; do rm -f "$f"; done
+}
+
+# ---------- dependensi dasar (sebelum menyentuh GitHub) ---------------------
+# Termux baru: paket dasar ini harus ada lebih dulu, dan curl bisa rusak oleh
+# paket glibc ("cannot locate symbol SSL_set_quic_tls_early_data_enabled").
+BASE_PKGS="curl tar unzip gzip coreutils ca-certificates jq python git sqlite wget openssh gh nodejs yq shellcheck ncdu htop"
+# Opsional/besar: butuh repo x11-repo; gagal = peringatan saja, bukan error.
+EXTRA_PKGS="tesseract chromium"
+
+apt_update() {
+  local i
+  for i in 1 2 3; do
+    pkg update -y >/dev/null 2>&1 && return 0
+    sleep $((i * 2))
+  done
+  return 1
+}
+
+curl_ok() { curl -fsS --max-time 10 -o /dev/null https://github.com >/dev/null 2>&1; }
+
+heal_curl() {
+  curl_ok && return 0
+  say "curl tidak sehat — memasang ulang curl/libcurl/openssl"
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --reinstall \
+    -o Dpkg::Options::=--force-confold curl libcurl openssl ca-certificates >/dev/null 2>&1 || \
+    pkg install -y curl libcurl openssl ca-certificates >/dev/null 2>&1 || true
+  hash -r 2>/dev/null || true
+  curl_ok
+}
+
+ensure_base_deps() {
+  apt_update || say "! peringatan: 'pkg update' gagal (lanjut, pakai daftar paket lama)"
+  # shellcheck disable=SC2086
+  pkg install -y $BASE_PKGS || die "gagal memasang paket dasar: $BASE_PKGS"
+  heal_curl || say "! curl masih bermasalah; unduhan akan mencoba wget"
+  # Opsional: jangan gagalkan install kalau repo/paketnya tidak tersedia.
+  if [ "$NO_EXTRA" -eq 0 ]; then
+    pkg install -y x11-repo >/dev/null 2>&1 || true
+    # shellcheck disable=SC2086
+    pkg install -y $EXTRA_PKGS >/dev/null 2>&1 ||
+      say "! paket opsional dilewati: $EXTRA_PKGS (bisa dipasang nanti: pkg install $EXTRA_PKGS)"
+  fi
 }
 
 LATEST="$(latest_tag)"
@@ -142,7 +219,7 @@ fi
 
 if [ "$MODE" = "dry-run" ]; then
   step "Rencana (dry-run, tidak ada yang diubah)"
-  say "1. pkg install curl tar ca-certificates jq"
+  say "1. pkg install $BASE_PKGS (dijalankan otomatis + curl dipulihkan bila rusak)"
   say "2. pkg install glibc-repo glibc termux-exec-glibc"
   say "3. launcher: paket dpkg opencode (repo termuxvoid) atau opencode-launcher dari repo ini"
   say "4. unduh $ASSET untuk $LATEST_NOV"
@@ -155,15 +232,18 @@ if [ "$MODE" = "dry-run" ]; then
   exit 0
 fi
 
-step "1/6 Paket dasar"
-pkg update -y
-pkg install -y curl tar ca-certificates jq
+step "1/6 Paket dasar + dependensi"
+# Dependensi yang dipakai fitur bawaan (plugin, digest sesi, sync memori).
+# Dipasang di awal supaya Termux baru tidak error di tengah jalan.
+ensure_base_deps
 
 step "2/6 Runtime glibc (wajib: binary opencode = glibc, Android = bionic)"
-pkg install -y glibc-repo || true
-pkg update -y
-pkg install -y glibc termux-exec-glibc
+pkg install -y glibc-repo >/dev/null 2>&1 || true
+apt_update || true
+pkg install -y glibc termux-exec-glibc || die "gagal memasang glibc/termux-exec-glibc"
 have_loader || die "Loader glibc tidak ditemukan: $PREFIX/glibc/lib/ld-linux-aarch64.so.1"
+# Urutan penting: glibc dulu, baru curl diperiksa lagi.
+heal_curl || say "! curl tetap bermasalah setelah glibc"
 
 step "3/6 Launcher"
 if dpkg -s opencode >/dev/null 2>&1 && [ -x "$LAUNCHER" ]; then
@@ -172,8 +252,19 @@ if dpkg -s opencode >/dev/null 2>&1 && [ -x "$LAUNCHER" ]; then
   say "apt-mark hold opencode -> aman dari 'pkg upgrade' yang menimpa payload."
 elif command -v pkg >/dev/null 2>&1; then
   TL="$PREFIX/etc/apt/sources.list.d/termuxvoid.list"
-  [ -f "$TL" ] || printf 'deb [arch=all] https://termuxvoid.github.io/repo termuxvoid main\n' > "$TL"
-  pkg update -y
+  # [trusted=yes] wajib: repo termuxvoid tidak menandatangani InRelease, dan
+  # tanpa ini `pkg update` gagal: "NO_PUBKEY … repository is not signed".
+  # File lama (dibuat versi sebelumnya tanpa trusted=yes) ikut diperbaiki.
+  if [ -f "$TL" ]; then
+    if ! grep -q 'trusted=yes' "$TL"; then
+      cp "$TL" "$TL.bak-$(date +%Y%m%d-%H%M%S)"
+      printf 'deb [arch=all trusted=yes] https://termuxvoid.github.io/repo termuxvoid main\n' > "$TL"
+      say "sources.list termuxvoid diperbaiki (tambah trusted=yes)"
+    fi
+  else
+    printf 'deb [arch=all trusted=yes] https://termuxvoid.github.io/repo termuxvoid main\n' > "$TL"
+  fi
+  apt_update || say "! peringatan: 'pkg update' gagal setelah menambah repo termuxvoid"
   pkg install -y opencode || true
   if [ ! -x "$LAUNCHER" ]; then
     say "Paket termuxvoid tidak tersedia, memakai launcher bawaan repo ini."
@@ -193,11 +284,11 @@ else
   trap 'rm -rf "$tmpdir"' EXIT
   MIRROR_URL="https://github.com/$REPO/releases/download/opencode-termux-$LATEST_NOV/$ASSET"
   UP_URL="https://github.com/$UPSTREAM/releases/download/$LATEST/$ASSET"
-  if curl -fL --retry 2 --progress-bar -o "$tmpdir/pkg.tar.gz" "$MIRROR_URL"; then
+  if download_url "$MIRROR_URL" "$tmpdir/pkg.tar.gz"; then
     say "Sumber: mirror repo $REPO"
   else
     say "Mirror tidak tersedia, ambil dari upstream..."
-    curl -fL --retry 3 --progress-bar -o "$tmpdir/pkg.tar.gz" "$UP_URL" || die "Gagal mengunduh $UP_URL"
+    download_url "$UP_URL" "$tmpdir/pkg.tar.gz" || die "Gagal mengunduh $UP_URL"
   fi
   tar -xzf "$tmpdir/pkg.tar.gz" -C "$tmpdir" || die "Arsip rusak."
   # nama file di dalam arsip bisa "opencode" (rilisan upstream) atau
