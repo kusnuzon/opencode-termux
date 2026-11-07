@@ -1,11 +1,11 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# upgrade.sh — upgrade opencode Termux ke versi resmi terbaru.
+# upgrade.sh — upgrade opencode Termux to the latest official version.
 #
-#   bash upgrade.sh            # upgrade ke terbaru (kalau sudah paling baru: no-op)
-#   bash upgrade.sh --check    # hanya cek status
-#   bash upgrade.sh 1.19.3     # pasang versi tertentu
+#   bash upgrade.sh            # upgrade to the latest (no-op if already current)
+#   bash upgrade.sh --check    # status check only
+#   bash upgrade.sh 1.19.3     # install a specific version
 #
-# Setara dengan: bash install.sh --upgrade
+# Equivalent to: bash install.sh --upgrade
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"

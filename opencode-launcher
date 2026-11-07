@@ -1,11 +1,11 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# opencode-launcher — menjalankan binary opencode (build glibc) di Termux/Android.
+# opencode-launcher — runs the opencode binary (glibc build) on Termux/Android.
 #
-# Dipakai sebagai $PREFIX/bin/opencode. Binary resmi opencode untuk
-# linux-arm64 butuh loader glibc, sedangkan Android hanya punya bionic.
-# Loader glibc dari Termux (paket `glibc`) dipakai sebagai interpreter.
+# Used as $PREFIX/bin/opencode. The official opencode binary for linux-arm64
+# needs a glibc loader, while Android only ships bionic. The glibc loader from
+# Termux (the `glibc` package) is used as the interpreter.
 #
-# Don't edit langsung; pakai: https://github.com/kusnuzon/opencode-termux
+# Do not edit directly; use: https://github.com/kusnuzon/opencode-termux
 PREFIX="${PREFIX:-@PREFIX@}"
 export LD_LIBRARY_PATH="$PREFIX/glibc/lib:${LD_LIBRARY_PATH:-}"
 export SSL_CERT_FILE="$PREFIX/etc/tls/cert.pem"

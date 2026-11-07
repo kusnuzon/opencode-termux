@@ -1,134 +1,134 @@
 # opencode-termux
 
-Installer **opencode** (agensi AI coding terminal) untuk **Termux / Android**, satu perintah, dan selalu mengikuti versi resmi opencode yang terbaru.
+Installer for **opencode** (the terminal AI coding agent) on **Termux / Android**: one command, and it always tracks the latest official opencode release.
 
-> Repo resmi `anomalyco/opencode` **tidak punya build `android/arm64`**, dan `npm i -g opencode-ai` **gagal** di Termux.
-> Repo ini solve dua masalah itu: memasang binary resmi yang bisa jalan di Android, **dan** memperbaruinya otomatis mengikuti rilisan upstream.
+> The official `anomalyco/opencode` repo has **no `android/arm64` build**, and `npm i -g opencode-ai` **fails** on Termux.
+> This repo solves both problems: it installs the official binary in a form that runs on Android, **and** keeps it updated from upstream releases.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kusnuzon/opencode-termux/main/install.sh | bash
 ```
 
-Selesai → `opencode` langsung bisa dipakai.
+Done — `opencode` is ready to use.
 
-> Kalau mau mengirim opsi lewat pipe, pakai `bash -s -- <opsi>`:
+> To pass options through a pipe, use `bash -s -- <options>`:
 > `curl -fsSL https://raw.githubusercontent.com/kusnuzon/opencode-termux/main/install.sh | bash -s -- --upgrade`
 
 ---
 
-## Kenapa butuh repo ini?
+## Why this repo exists
 
-| Cara | Hasil di Termux |
+| Approach | Result on Termux |
 |---|---|
-| `npm i -g opencode-ai` | ❌ Gagal — npm tidak punya binary `android/arm64` |
-| Build `musl` (`opencode-linux-arm64-musl.tar.gz`) | ❌ Gagal — bukan fully static (butuh `/lib/ld-musl-aarch64.so.1`), dan Android tidak punya `/etc/resolv.conf` |
-| Build `linux-arm64` biasa | ❌ Gagal — butuh loader glibc (`/lib64/ld-linux-aarch64.so.1`), sedangkan Android pakai bionic |
-| **Build `linux-arm64` + loader glibc Termux** | ✅ **Ini yang dipakai repo ini** |
+| `npm i -g opencode-ai` | ❌ Fails — npm has no `android/arm64` binary |
+| `musl` build (`opencode-linux-arm64-musl.tar.gz`) | ❌ Fails — not fully static (needs `/lib/ld-musl-aarch64.so.1`), and Android has no `/etc/resolv.conf` |
+| Plain `linux-arm64` build | ❌ Fails — needs a glibc loader (`/lib64/ld-linux-aarch64.so.1`), while Android uses bionic |
+| **`linux-arm64` build + Termux glibc loader** | ✅ **What this repo uses** |
 
-Cara kerjanya: binary resmi opencode (glibc) dijalankan melalui **loader glibc dari Termux** (`$PREFIX/glibc/lib/ld-linux-aarch64.so.1`). Jadi yang terpasang di HP tetap **binary resmi opencode**, bukan build modifikasi.
+How it works: the official opencode binary (glibc) is executed through **Termux's glibc loader** (`$PREFIX/glibc/lib/ld-linux-aarch64.so.1`). So what ends up on your phone is still the **official opencode binary**, not a patched build.
 
 ---
 
-## 1. Install (dari nol)
+## 1. Install (from scratch)
 
-Buka Termux, lalu **satu perintah**:
+Open Termux and run **one command**:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kusnuzon/opencode-termux/main/install.sh | bash
 ```
 
-Yang dikerjakan otomatis:
+What it does automatically:
 
-1. Dependensi dasar dipasang **di awal** (Termux baru langsung siap):
+1. Installs base dependencies **first** (a fresh Termux is usable right away):
    `curl tar unzip gzip coreutils ca-certificates jq python git sqlite wget
-   openssh gh nodejs yq shellcheck ncdu htop`, lalu opsional `tesseract
-   chromium` (+ `x11-repo`). Opsional yang gagal hanya jadi peringatan;
-   lewati dengan `--no-extra`.
-2. `pkg install glibc-repo` + `glibc` + `termux-exec-glibc` (runtime glibc — wajib).
-   Kalau paket glibc merusak `curl` (`cannot locate symbol SSL_set_quic_…`),
-   `curl`/`libcurl`/`openssl` otomatis dipasang ulang dan unduhan punya
-   cadangan `wget`/`python`.
-3. Launcher: pakai paket dpkg `opencode` (repo termuxvoid) **atau** launcher bawaan repo ini, mana yang tersedia
-4. `apt-mark hold opencode` → supaya `pkg upgrade` tidak menimpa binary yang baru dipasang
-5. Unduh payload versi terbaru → pasang → **verifikasi** `opencode --version`
-6. Kalau verifikasi gagal → payload lama otomatis dikembalikan (rollback)
-7. Pasang plugin `memory.js` + `session-title.js`, lalu template memori
-   (`MEMORY.md`, `AGENTS.md`, `RECENT.md`) dan hook `~/.bashrc` — **file yang
-   sudah ada tidak ditimpa**. Lewati dengan `--no-plugin` / `--no-memory`.
+   openssh gh nodejs yq shellcheck ncdu htop`, then optionally `tesseract
+   chromium` (+ `x11-repo`). Optional failures only produce a warning;
+   skip them with `--no-extra`.
+2. `pkg install glibc-repo` + `glibc` + `termux-exec-glibc` (glibc runtime — required).
+   If the glibc packages break `curl` (`cannot locate symbol SSL_set_quic_…`),
+   `curl`/`libcurl`/`openssl` are reinstalled automatically and downloads have
+   `wget`/`python` fallbacks.
+3. Launcher: it uses the dpkg `opencode` package (termuxvoid repo) **or** the launcher bundled with this repo, whichever is available
+4. `apt-mark hold opencode` → so `pkg upgrade` cannot overwrite the binary that was just installed
+5. Downloads the latest payload → installs it → **verifies** `opencode --version`
+6. If verification fails → the previous payload is restored automatically (rollback)
+7. Installs the `memory.js` + `session-title.js` plugins, then the memory templates
+   (`MEMORY.md`, `AGENTS.md`, `RECENT.md`) and the `~/.bashrc` hook — **existing
+   files are never overwritten**. Skip with `--no-plugin` / `--no-memory`.
 
-Cek hasilnya:
+Check the result:
 
 ```bash
-opencode --version     # contoh: 1.19.3
-opencode               # mulai sesi
+opencode --version     # example: 1.19.3
+opencode               # start a session
 ```
 
-> Butuh ±500 MB (runtime glibc) + ±180 MB (payload opencode).
+> Needs about 500 MB (glibc runtime) + about 180 MB (opencode payload).
 
-### Memori antar sesi (default)
+### Cross-session memory (default)
 
-Tanpa opsi tambahan, installer sudah memasang:
+With no extra options, the installer already sets up:
 
-| File | Isi |
+| File | Contents |
 |---|---|
-| `plugins/memory.js` → `~/.config/opencode/plugins/` | tool `memory_save` (V1+V2) |
-| `plugins/session-title.js` → `~/.config/opencode/plugins/` | judul sesi otomatis tanpa memanggil model |
-| `memory/MEMORY.md` → `~/.config/opencode/MEMORY.md` | template kosong, diisi lewat `memory_save` |
-| `memory/AGENTS.md` → `~/.config/opencode/AGENTS.md` | template aturan kerja |
+| `plugins/memory.js` → `~/.config/opencode/plugins/` | `memory_save` tool (V1 + V2) |
+| `plugins/session-title.js` → `~/.config/opencode/plugins/` | automatic session titles without calling a model |
+| `memory/MEMORY.md` → `~/.config/opencode/MEMORY.md` | empty template, filled in through `memory_save` |
+| `memory/AGENTS.md` → `~/.config/opencode/AGENTS.md` | working-rules template |
 | `memory/opencode.jsonc` → `~/.config/opencode/opencode.jsonc` | `instructions`: MEMORY.md + RECENT.md |
-| `plugins/session-digest.py` → `~/.config/opencode/bin/` | pembuat `RECENT.md` dari DB V1 + V2 |
+| `plugins/session-digest.py` → `~/.config/opencode/bin/` | builds `RECENT.md` from the V1 + V2 databases |
 
-`MEMORY.md` menyimpan fakta jangka panjang dan `RECENT.md` ringkasan sesi
-terakhir; keduanya dimuat otomatis di awal sesi baru. Data lama tidak hilang —
-installer melewati file memori yang sudah ada. Untuk melewati pemasangan:
-`--no-memory` (template) atau `--no-plugin` (plugin).
+`MEMORY.md` holds long-term facts and `RECENT.md` summarizes recent sessions;
+both are loaded automatically at the start of a new session. Existing data is
+never lost — the installer skips memory files that already exist. To skip the
+setup: `--no-memory` (templates) or `--no-plugin` (plugins).
 
 ---
 
-## 2. Upgrade ke versi terbaru
+## 2. Upgrade to the latest version
 
 ```bash
-bash install.sh --upgrade     # atau: bash upgrade.sh
-bash install.sh --check       # cek status saja, tidak mengubah apa pun
+bash install.sh --upgrade     # or: bash upgrade.sh
+bash install.sh --check       # status only, changes nothing
 ```
 
-Script menanyakan GitHub API `anomalyco/opencode/releases/latest`, lalu:
+The script asks the GitHub API for `anomalyco/opencode/releases/latest`, then:
 
-- kalau versi sudah sama → **tidak melakukan apa-apa** (aman dijalankan berkala)
-- kalau ada yang lebih baru → unduh → **backup versi lama** ke `~/backups/` → ganti payload → verifikasi → **rollback otomatis** bila gagal
-- bisa dipasang versi tertentu: `bash install.sh --version 1.19.3`
+- if the versions match → **does nothing** (safe to run on a schedule)
+- if a newer one exists → download → **back up the old version** to `~/backups/` → swap the payload → verify → **automatic rollback** on failure
+- you can install a specific version: `bash install.sh --version 1.19.3`
 
-### Update otomatis tanpa manual
+### Automatic updates without manual work
 
-Repo ini punya GitHub Actions (`sync-upstream.yml`) yang **setiap hari** (±03:17 UTC) mengecek rilisan upstream lalu:
+This repo ships a GitHub Actions workflow (`sync-upstream.yml`) that **every day** (around 03:17 UTC) checks upstream releases and then:
 
-1. mengunduh `opencode-linux-arm64.tar.gz` versi terbaru
-2. memperbarui file `VERSION`
-3. menerbitkan **Release mirror** `opencode-termux-<versi>` (berisi payload + launcher)
+1. downloads the latest `opencode-linux-arm64.tar.gz`
+2. updates the `VERSION` file
+3. publishes a **mirror Release** `opencode-termux-<version>` (payload + launcher)
 
-Jadi `install.sh` selalu punya sumber unduhan yang sinkron dengan upstream, dan `install.sh` sendiri sudah otomatis ambil versi terbaru setiap kali dijalankan.
+So `install.sh` always has a download source that is in sync with upstream, and `install.sh` itself always picks up the latest version whenever it runs.
 
 ---
 
 ## 3. Uninstall
 
 ```bash
-bash uninstall.sh            # hapus payload + launcher
-bash uninstall.sh --purge    # sekalian lepas paket dpkg opencode + runtime glibc
+bash uninstall.sh            # remove payload + launcher
+bash uninstall.sh --purge    # also remove the opencode dpkg package + glibc runtime
 ```
 
-Config dan riwayat sesi (`~/.config/opencode`, `~/.local/share/opencode`) **tidak** dihapus.
+Config and session history (`~/.config/opencode`, `~/.local/share/opencode`) are **not** removed.
 
 ---
 
-## 4. Manual (kalau mau tanpa script)
+## 4. Manual (if you prefer no script)
 
 ```bash
-# 1. runtime glibc
+# 1. glibc runtime
 pkg install glibc-repo
 pkg update && pkg install glibc termux-exec-glibc
 
-# 2. payload resmi
+# 2. official payload
 mkdir -p $PREFIX/share/opencode
 curl -fL -o opencode.tar.gz \
   https://github.com/anomalyco/opencode/releases/download/v1.19.3/opencode-linux-arm64.tar.gz
@@ -142,7 +142,7 @@ curl -fsSL -o $PREFIX/bin/opencode \
 sed -i "s|@PREFIX@|$PREFIX|g" $PREFIX/bin/opencode
 chmod 755 $PREFIX/bin/opencode
 
-# 4. cek
+# 4. check
 opencode --version
 ```
 
@@ -150,34 +150,34 @@ opencode --version
 
 ## 5. Troubleshooting
 
-| Gejala | Penyebab | Solusi |
+| Symptom | Cause | Fix |
 |---|---|---|
-| `cannot execute: required file not found` | Payload tanpa loader glibc | `pkg install glibc termux-exec-glibc`, lalu `bash install.sh --upgrade` |
-| `bash: opencode: command not found` | Launcher hilang | `curl -fsSL .../opencode-launcher \| sed "s\|@PREFIX@\|$PREFIX\|g" > $PREFIX/bin/opencode` |
-| Versi lama muncul lagi setelah `pkg upgrade` | Paket dpkg menimpa payload | `bash install.sh --upgrade` (repo ini sudah `apt-mark hold`) |
-| Error TLS / `unable to verify` | `SSL_CERT_FILE` tidak set | Launcher sudah men-set `SSL_CERT_FILE=$PREFIX/etc/tls/cert.pem`; pastikan `ca-certificates` terpasang |
-| DNS gagal | Android tidak punya `/etc/resolv.conf` | Runtime glibc Termux sudah menangani ini; **jangan** pakai build musl |
-| `pkg install opencode` versi lama | Repo termuxvoid lambat update | `bash install.sh --upgrade` (payload diambil dari release resmi, bukan dari dpkg) |
+| `cannot execute: required file not found` | Payload without a glibc loader | `pkg install glibc termux-exec-glibc`, then `bash install.sh --upgrade` |
+| `bash: opencode: command not found` | Launcher missing | `curl -fsSL .../opencode-launcher \| sed "s\|@PREFIX@\|$PREFIX\|g" > $PREFIX/bin/opencode` |
+| An old version reappears after `pkg upgrade` | The dpkg package overwrote the payload | `bash install.sh --upgrade` (this repo already runs `apt-mark hold`) |
+| TLS error / `unable to verify` | `SSL_CERT_FILE` not set | The launcher already sets `SSL_CERT_FILE=$PREFIX/etc/tls/cert.pem`; make sure `ca-certificates` is installed |
+| DNS fails | Android has no `/etc/resolv.conf` | The Termux glibc runtime already handles this; do **not** use the musl build |
+| `pkg install opencode` gives an old version | The termuxvoid repo updates slowly | `bash install.sh --upgrade` (the payload comes from the official release, not from dpkg) |
 
 ---
 
-## 6. Isi repo
+## 6. Repo contents
 
-| File | Fungsi |
+| File | Purpose |
 |---|---|
-| `install.sh` | Installer utama: deps → glibc runtime → launcher → payload terbaru → verifikasi → plugin/memori |
+| `install.sh` | Main installer: deps → glibc runtime → launcher → latest payload → verification → plugins/memory |
 | `plugins/` | `memory.js`, `session-title.js`, `session-digest.py` |
-| `memory/` | Template `MEMORY.md`, `AGENTS.md`, `opencode.jsonc` |
-| `upgrade.sh` | Alias `install.sh --upgrade` |
-| `uninstall.sh` | Hapus opencode (opsional `--purge` untuk paket glibc juga) |
-| `opencode-launcher` | Launcher: menjalankan binary glibc lewat loader glibc Termux |
-| `VERSION` | Versi opencode yang sedang dimirror (diperbarui otomatis oleh Actions) |
-| `.github/workflows/sync-upstream.yml` | Cron harian: cek upstream → mirror → terbitkan Release |
+| `memory/` | Templates for `MEMORY.md`, `AGENTS.md`, `opencode.jsonc` |
+| `upgrade.sh` | Alias for `install.sh --upgrade` |
+| `uninstall.sh` | Removes opencode (add `--purge` to drop the glibc packages too) |
+| `opencode-launcher` | Launcher: runs the glibc binary through the Termux glibc loader |
+| `VERSION` | The opencode version currently mirrored (updated automatically by Actions) |
+| `.github/workflows/sync-upstream.yml` | Daily cron: check upstream → mirror → publish a Release |
 
 ---
 
-## 7. Catatan & lisensi
+## 7. Notes & license
 
-- **Bukan afiliasi resmi** opencode. Yang dimirror hanya payload binary dari GitHub Release `anomalyco/opencode`.
-- Semua installer/launcher di repo ini: **MIT License**.
-- Kalau ada versi opencode yang lebih baru, `install.sh` akan mengikutinya otomatis — tidak perlu update manual.
+- **Not officially affiliated** with opencode. Only the binary payload from the `anomalyco/opencode` GitHub Releases is mirrored.
+- Every installer/launcher in this repo is under the **MIT License**.
+- When a newer opencode release appears, `install.sh` follows it automatically — no manual update needed.

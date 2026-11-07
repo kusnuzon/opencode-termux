@@ -1,22 +1,22 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# install.sh — instalasi opencode (versi resmi terbaru) di Termux/Android, 1 perintah.
+# install.sh — install opencode (latest official build) on Termux/Android in one command.
 #
 #   curl -fsSL https://raw.githubusercontent.com/kusnuzon/opencode-termux/main/install.sh | bash
 #
-# Opsi:
-#   --check       hanya laporan status (terpasang vs terbaru), tidak mengubah apa pun
-#   --upgrade     samakan dengan versi terbaru (default juga melakukan ini)
-#   --version X   pasang versi tertentu, mis. --version 1.19.3
-#   --dry-run     tampilkan rencana tanpa mengubah apa pun
-#   --no-plugin   jangan pasang plugin bawaan (memory_save + judul sesi)
-#   --no-extra    jangan pasang paket opsional besar (tesseract, chromium)
-#   --no-memory   jangan pasang template memori/AGENTS/RECENT + hook ~/.bashrc
-#   --with-memory (default) pasang memori pribadi + ringkasan sesi otomatis
+# Options:
+#   --check       status report only (installed vs latest), changes nothing
+#   --upgrade     match the latest version (the default does this too)
+#   --version X   install a specific version, e.g. --version 1.19.3
+#   --dry-run     print the plan without changing anything
+#   --no-plugin   skip the bundled plugins (memory_save + session titles)
+#   --no-extra    skip the large optional packages (tesseract, chromium)
+#   --no-memory   skip the memory/AGENTS/RECENT templates + ~/.bashrc hook
+#   --with-memory (default) install personal memory + automatic session summaries
 #
-# Kenapa perlu script ini: repo resmi anomalyco/opencode tidak punya build
-# android/arm64 dan `npm i -g opencode-ai` gagal di Termux. Yang dipakai:
-# binary glibc linux-arm64 dari GitHub release resmi, dijalankan lewat loader
-# glibc milik Termux.
+# Why this script exists: the official anomalyco/opencode repo has no
+# android/arm64 build and `npm i -g opencode-ai` fails on Termux. Instead we use
+# the glibc linux-arm64 binary from the official GitHub release, run through the
+# glibc loader that ships with Termux.
 set -euo pipefail
 
 REPO="kusnuzon/opencode-termux"
@@ -54,14 +54,14 @@ while [ $# -gt 0 ]; do
     --no-memory) WITH_MEMORY=0; shift ;;
     --with-memory) WITH_MEMORY=1; shift ;;
     -h|--help)  usage; exit 0 ;;
-    *) die "Argumen tidak dikenal: $1" ;;
+    *) die "Unknown argument: $1" ;;
   esac
 done
 
-# ---------- sanity: hanya Termux ----------
-[ -d "$PREFIX" ] || die "Script ini hanya untuk Termux (Android)."
+# ---------- sanity: Termux only ----------
+[ -d "$PREFIX" ] || die "This script is for Termux (Android) only."
 if [ "$(uname -o 2>/dev/null || echo unknown)" != "Android" ]; then
-  die "Script ini hanya untuk Termux (Android). Di Linux biasa cukup: curl -fsSL https://opencode.ai/install | bash"
+  die "This script is for Termux (Android) only. On regular Linux just run: curl -fsSL https://opencode.ai/install | bash"
 fi
 
 api_get() {
@@ -73,9 +73,9 @@ api_get() {
 }
 
 # download_url <url> <dest> [accept] — curl → wget → python.
-# Latar: paket glibc di Termux bisa membuat curl mati dengan
-# "cannot locate symbol SSL_set_quic_tls_early_data_enabled"; tanpa cadangan
-# ini seluruh unduhan berikutnya ikut gagal.
+# Background: the glibc packages on Termux can break curl with
+# "cannot locate symbol SSL_set_quic_tls_early_data_enabled"; without this
+# fallback every later download would fail too.
 download_url() {
   local url="$1" dest="$2" accept="${3:-}" part="$2.part"
   mkdir -p "$(dirname "$dest")" || return 1
@@ -106,7 +106,7 @@ PY
   return 1
 }
 
-# fetch_file <path-di-repo> <tujuan> — pakai API (selalu segar), fallback raw.
+# fetch_file <repo-path> <destination> — use the API (always fresh), fall back to raw.
 fetch_file() {
   local path="$1" dest="$2"
   mkdir -p "$(dirname "$dest")"
@@ -127,7 +127,7 @@ installed_version() {
 }
 
 payload_version() {
-  # cek payload langsung (dipakai kalau launcher belum ada)
+  # read the payload directly (used when the launcher is not there yet)
   if [ -x "$PAYLOAD" ] && [ -x "$PREFIX/glibc/lib/ld-linux-aarch64.so.1" ]; then
     "$PREFIX/glibc/lib/ld-linux-aarch64.so.1" --library-path "$PREFIX/glibc/lib" "$PAYLOAD" --version 2>/dev/null |
       tr -d '[:space:]' || true
@@ -143,12 +143,12 @@ install_our_launcher() {
   else
     src="$(mktemp)"
     download_url "https://raw.githubusercontent.com/$REPO/main/opencode-launcher" "$src" ||
-      die "Gagal mengunduh opencode-launcher dari repo."
+      die "Failed to download opencode-launcher from the repo."
   fi
   mkdir -p "$(dirname "$LAUNCHER")"
   sed "s|@PREFIX@|$PREFIX|g" "$src" > "$LAUNCHER"
   chmod 755 "$LAUNCHER"
-  say "Launcher dipasang: $LAUNCHER"
+  say "Launcher installed: $LAUNCHER"
 }
 
 prune_backups() {
@@ -156,11 +156,11 @@ prune_backups() {
     while read -r f; do rm -f "$f"; done
 }
 
-# ---------- dependensi dasar (sebelum menyentuh GitHub) ---------------------
-# Termux baru: paket dasar ini harus ada lebih dulu, dan curl bisa rusak oleh
-# paket glibc ("cannot locate symbol SSL_set_quic_tls_early_data_enabled").
+# ---------- base dependencies (before touching GitHub) ----------------------
+# Fresh Termux: these base packages must exist first, and curl can be broken by
+# the glibc packages ("cannot locate symbol SSL_set_quic_tls_early_data_enabled").
 BASE_PKGS="curl tar unzip gzip coreutils ca-certificates jq python git sqlite wget openssh gh nodejs yq shellcheck ncdu htop"
-# Opsional/besar: butuh repo x11-repo; gagal = peringatan saja, bukan error.
+# Optional/large: needs the x11-repo; a failure is only a warning, not an error.
 EXTRA_PKGS="tesseract chromium"
 
 apt_update() {
@@ -176,7 +176,7 @@ curl_ok() { curl -fsS --max-time 10 -o /dev/null https://github.com >/dev/null 2
 
 heal_curl() {
   curl_ok && return 0
-  say "curl tidak sehat — memasang ulang curl/libcurl/openssl"
+  say "curl is unhealthy — reinstalling curl/libcurl/openssl"
   DEBIAN_FRONTEND=noninteractive apt-get install -y --reinstall \
     -o Dpkg::Options::=--force-confold curl libcurl openssl ca-certificates >/dev/null 2>&1 || \
     pkg install -y curl libcurl openssl ca-certificates >/dev/null 2>&1 || true
@@ -185,96 +185,96 @@ heal_curl() {
 }
 
 ensure_base_deps() {
-  apt_update || say "! peringatan: 'pkg update' gagal (lanjut, pakai daftar paket lama)"
+  apt_update || say "! warning: 'pkg update' failed (continuing with the cached package lists)"
   # shellcheck disable=SC2086
-  pkg install -y $BASE_PKGS || die "gagal memasang paket dasar: $BASE_PKGS"
-  heal_curl || say "! curl masih bermasalah; unduhan akan mencoba wget"
-  # Opsional: jangan gagalkan install kalau repo/paketnya tidak tersedia.
+  pkg install -y $BASE_PKGS || die "failed to install base packages: $BASE_PKGS"
+  heal_curl || say "! curl is still broken; downloads will fall back to wget"
+  # Optional: never fail the install when the repo/package is unavailable.
   if [ "$NO_EXTRA" -eq 0 ]; then
     pkg install -y x11-repo >/dev/null 2>&1 || true
     # shellcheck disable=SC2086
     pkg install -y $EXTRA_PKGS >/dev/null 2>&1 ||
-      say "! paket opsional dilewati: $EXTRA_PKGS (bisa dipasang nanti: pkg install $EXTRA_PKGS)"
+      say "! optional packages skipped: $EXTRA_PKGS (install later with: pkg install $EXTRA_PKGS)"
   fi
 }
 
 LATEST="$(latest_tag)"
-[ -n "$LATEST" ] || die "Gagal mengambil versi terbaru dari GitHub API."
+[ -n "$LATEST" ] || die "Failed to fetch the latest version from the GitHub API."
 LATEST_NOV="${LATEST#v}"
 CUR="$(installed_version)"
 [ -n "$CUR" ] || CUR="$(payload_version)"
 
 if [ "$MODE" = "check" ]; then
-  say "Terpasang : ${CUR:-tidak ada}"
-  say "Terbaru  : $LATEST_NOV"
-  say "Launcher : $LAUNCHER"
-  say "Payload  : $PAYLOAD"
+  say "Installed : ${CUR:-none}"
+  say "Latest    : $LATEST_NOV"
+  say "Launcher  : $LAUNCHER"
+  say "Payload   : $PAYLOAD"
   if [ "${CUR:-}" = "$LATEST_NOV" ]; then
-    say "${c_ok}Sudah versi terbaru.${c_off}"
+    say "${c_ok}Already on the latest version.${c_off}"
   else
-    say "${c_warn}Ada versi baru — jalankan: bash install.sh --upgrade${c_off}"
+    say "${c_warn}A newer version is available — run: bash install.sh --upgrade${c_off}"
   fi
   exit 0
 fi
 
 if [ "$MODE" = "dry-run" ]; then
-  step "Rencana (dry-run, tidak ada yang diubah)"
-  say "1. pkg install $BASE_PKGS (dijalankan otomatis + curl dipulihkan bila rusak)"
+  step "Plan (dry-run, nothing will be changed)"
+  say "1. pkg install $BASE_PKGS (run automatically, curl healed if broken)"
   say "2. pkg install glibc-repo glibc termux-exec-glibc"
-  say "3. launcher: paket dpkg opencode (repo termuxvoid) atau opencode-launcher dari repo ini"
-  say "4. unduh $ASSET untuk $LATEST_NOV"
-  say "   mirror : https://github.com/$REPO/releases/download/opencode-termux-$LATEST_NOV/$ASSET"
+  say "3. launcher: the opencode dpkg package (termuxvoid repo) or opencode-launcher from this repo"
+  say "4. download $ASSET for $LATEST_NOV"
+  say "   mirror  : https://github.com/$REPO/releases/download/opencode-termux-$LATEST_NOV/$ASSET"
   say "   upstream: https://github.com/$UPSTREAM/releases/download/$LATEST/$ASSET"
-  say "5. pasang ke $PAYLOAD + verifikasi 'opencode --version'"
-  [ "$NO_PLUGIN" -eq 0 ] && say "6. pasang plugin bawaan (memory_save + judul sesi)"
-  [ "$WITH_MEMORY" -eq 1 ] && say "   pasang MEMORY.md/AGENTS.md/RECENT.md + hook ~/.bashrc"
-  say "Status sekarang: ${CUR:-tidak ada} | target: $LATEST_NOV"
+  say "5. install into $PAYLOAD + verify with 'opencode --version'"
+  [ "$NO_PLUGIN" -eq 0 ] && say "6. install the bundled plugins (memory_save + session titles)"
+  [ "$WITH_MEMORY" -eq 1 ] && say "   install MEMORY.md/AGENTS.md/RECENT.md + ~/.bashrc hook"
+  say "Current status: ${CUR:-none} | target: $LATEST_NOV"
   exit 0
 fi
 
-step "1/6 Paket dasar + dependensi"
-# Dependensi yang dipakai fitur bawaan (plugin, digest sesi, sync memori).
-# Dipasang di awal supaya Termux baru tidak error di tengah jalan.
+step "1/6 Base packages + dependencies"
+# Dependencies used by the built-in features (plugins, session digest, memory sync).
+# Installed up front so a fresh Termux does not fail halfway through.
 ensure_base_deps
 
-step "2/6 Runtime glibc (wajib: binary opencode = glibc, Android = bionic)"
+step "2/6 glibc runtime (required: the opencode binary is glibc, Android is bionic)"
 pkg install -y glibc-repo >/dev/null 2>&1 || true
 apt_update || true
-pkg install -y glibc termux-exec-glibc || die "gagal memasang glibc/termux-exec-glibc"
-have_loader || die "Loader glibc tidak ditemukan: $PREFIX/glibc/lib/ld-linux-aarch64.so.1"
-# Urutan penting: glibc dulu, baru curl diperiksa lagi.
-heal_curl || say "! curl tetap bermasalah setelah glibc"
+pkg install -y glibc termux-exec-glibc || die "failed to install glibc/termux-exec-glibc"
+have_loader || die "glibc loader not found: $PREFIX/glibc/lib/ld-linux-aarch64.so.1"
+# Order matters: glibc first, then check curl again.
+heal_curl || say "! curl is still broken after glibc"
 
 step "3/6 Launcher"
 if dpkg -s opencode >/dev/null 2>&1 && [ -x "$LAUNCHER" ]; then
-  say "Launcher dari paket dpkg (repo termuxvoid) dipakai."
+  say "Using the launcher from the dpkg package (termuxvoid repo)."
   apt-mark hold opencode || true
-  say "apt-mark hold opencode -> aman dari 'pkg upgrade' yang menimpa payload."
+  say "apt-mark hold opencode -> safe from 'pkg upgrade' overwriting the payload."
 elif command -v pkg >/dev/null 2>&1; then
   TL="$PREFIX/etc/apt/sources.list.d/termuxvoid.list"
-  # [trusted=yes] wajib: repo termuxvoid tidak menandatangani InRelease, dan
-  # tanpa ini `pkg update` gagal: "NO_PUBKEY … repository is not signed".
-  # File lama (dibuat versi sebelumnya tanpa trusted=yes) ikut diperbaiki.
+  # [trusted=yes] is required: the termuxvoid repo does not sign InRelease, and
+  # without it `pkg update` fails with: "NO_PUBKEY … repository is not signed".
+  # Old files (written by earlier versions without trusted=yes) are repaired too.
   if [ -f "$TL" ]; then
     if ! grep -q 'trusted=yes' "$TL"; then
       cp "$TL" "$TL.bak-$(date +%Y%m%d-%H%M%S)"
       printf 'deb [arch=all trusted=yes] https://termuxvoid.github.io/repo termuxvoid main\n' > "$TL"
-      say "sources.list termuxvoid diperbaiki (tambah trusted=yes)"
+      say "termuxvoid sources.list repaired (trusted=yes added)"
     fi
   else
     printf 'deb [arch=all trusted=yes] https://termuxvoid.github.io/repo termuxvoid main\n' > "$TL"
   fi
-  apt_update || say "! peringatan: 'pkg update' gagal setelah menambah repo termuxvoid"
+  apt_update || say "! warning: 'pkg update' failed after adding the termuxvoid repo"
   pkg install -y opencode || true
-  # Repo termuxvoid tidak menandatangani InRelease -> setiap `pkg update`
-  # mencetak "NO_PUBKEY". Setelah paketnya terpasang, repo dilepas lagi supaya
-  # update berikutnya bersih (paket + apt-mark hold tetap berlaku).
+  # The termuxvoid repo does not sign InRelease -> every `pkg update` prints
+  # "NO_PUBKEY". Once the package is in place the repo is removed again so later
+  # updates stay clean (the installed package + apt-mark hold remain).
   if dpkg -s opencode >/dev/null 2>&1; then
     rm -f "$TL"
     apt_update || true
   fi
   if [ ! -x "$LAUNCHER" ]; then
-    say "Paket termuxvoid tidak tersedia, memakai launcher bawaan repo ini."
+    say "The termuxvoid package is unavailable, using the launcher bundled with this repo."
     install_our_launcher
   fi
 else
@@ -283,31 +283,31 @@ fi
 
 if [ "${CUR:-}" = "$LATEST_NOV" ] && [ -x "$PAYLOAD" ]; then
   step "4/6 Payload"
-  say "${c_ok}opencode $CUR sudah versi terbaru ($LATEST_NOV). Tidak ada yang diubah.${c_off}"
+  say "${c_ok}opencode $CUR is already the latest version ($LATEST_NOV). Nothing changed.${c_off}"
 else
-  step "4/6 Unduh payload versi $LATEST_NOV"
+  step "4/6 Downloading payload version $LATEST_NOV"
   mkdir -p "$BACKUP_DIR" "$PAYLOAD_DIR"
   tmpdir="$(mktemp -d "$PREFIX/tmp/oc-install.XXXXXX")"
   trap 'rm -rf "$tmpdir"' EXIT
   MIRROR_URL="https://github.com/$REPO/releases/download/opencode-termux-$LATEST_NOV/$ASSET"
   UP_URL="https://github.com/$UPSTREAM/releases/download/$LATEST/$ASSET"
   if download_url "$MIRROR_URL" "$tmpdir/pkg.tar.gz"; then
-    say "Sumber: mirror repo $REPO"
+    say "Source: mirror in repo $REPO"
   else
-    say "Mirror tidak tersedia, ambil dari upstream..."
-    download_url "$UP_URL" "$tmpdir/pkg.tar.gz" || die "Gagal mengunduh $UP_URL"
+    say "Mirror unavailable, fetching from upstream..."
+    download_url "$UP_URL" "$tmpdir/pkg.tar.gz" || die "Failed to download $UP_URL"
   fi
-  tar -xzf "$tmpdir/pkg.tar.gz" -C "$tmpdir" || die "Arsip rusak."
-  # nama file di dalam arsip bisa "opencode" (rilisan upstream) atau
-  # "opencode.real" (hasil backup/repack repo ini)
+  tar -xzf "$tmpdir/pkg.tar.gz" -C "$tmpdir" || die "Corrupt archive."
+  # the file inside the archive may be "opencode" (upstream release) or
+  # "opencode.real" (backup/repack produced by this repo)
   if   [ -f "$tmpdir/opencode" ];      then BIN="$tmpdir/opencode"
   elif [ -f "$tmpdir/opencode.real" ]; then BIN="$tmpdir/opencode.real"
-  else die "Isi arsip tidak sesuai (opencode tidak ditemukan di dalam arsip)."; fi
+  else die "Unexpected archive contents (opencode not found inside)."; fi
   chmod 755 "$BIN"
 
   ts="$(date +%Y%m%d-%H%M%S)"
   if [ -f "$PAYLOAD" ]; then
-    say "Backup versi lama (${CUR:-lama}) -> $BACKUP_DIR/opencode-${CUR:-old}-$ts.tar.gz"
+    say "Backing up the old version (${CUR:-old}) -> $BACKUP_DIR/opencode-${CUR:-old}-$ts.tar.gz"
     tar -czf "$BACKUP_DIR/opencode-${CUR:-old}-$ts.tar.gz" -C "$PAYLOAD_DIR" opencode.real
     cp -f "$PAYLOAD" "$tmpdir/opencode.real.bak"
   fi
@@ -316,17 +316,17 @@ else
   prune_backups
 fi
 
-step "5/6 Verifikasi"
+step "5/6 Verification"
 GOT="$(installed_version)"; [ -n "$GOT" ] || GOT="$(payload_version)"
 if [ "$GOT" != "$LATEST_NOV" ]; then
   if [ -f "$tmpdir/opencode.real.bak" ]; then
     cp -f "$tmpdir/opencode.real.bak" "$PAYLOAD" && chmod 755 "$PAYLOAD"
-    say "${c_warn}Payload lama dipulihkan (rollback).${c_off}"
+    say "${c_warn}Old payload restored (rollback).${c_off}"
   fi
-  die "Verifikasi gagal (dapat: ${GOT:-kosong}, harusnya: $LATEST_NOV)."
+  die "Verification failed (got: ${GOT:-empty}, expected: $LATEST_NOV)."
 fi
 
-step "6/6 Plugin & ingatan lintas sesi"
+step "6/6 Plugins & cross-session memory"
 OC_DIR="$HOME/.config/opencode"
 PLUGIN_DIR="$OC_DIR/plugins"
 STAGE="$SELF_DIR"
@@ -335,7 +335,7 @@ STAGE="$SELF_DIR"
 install_plugin() {
   local name="$1" src="$STAGE/plugins/$1" dst="$PLUGIN_DIR/$1" backup
   if [ ! -s "$src" ]; then
-    fetch_file "plugins/$name" "$src" || { say "${c_warn}gagal mengunduh plugins/$name${c_off}"; return 1; }
+    fetch_file "plugins/$name" "$src" || { say "${c_warn}failed to download plugins/$name${c_off}"; return 1; }
   fi
   if [ -f "$dst" ] && ! cmp -s "$src" "$dst"; then
     if [ "$name" = "memory.js" ]; then
@@ -345,15 +345,15 @@ install_plugin() {
       backup="$dst.bak-$(date +%Y%m%d%H%M%S)"
     fi
     cp "$dst" "$backup"
-    say "Plugin lama dicadangkan ke $backup"
+    say "Old plugin backed up to $backup"
   fi
   cp "$src" "$dst"
   chmod 600 "$dst" 2>/dev/null || true
-  say "Plugin terpasang: $dst"
+  say "Plugin installed: $dst"
 }
 
 if [ "$NO_PLUGIN" -eq 1 ]; then
-  say "Plugin bawaan dilewati (--no-plugin)"
+  say "Bundled plugins skipped (--no-plugin)"
 else
   mkdir -p "$PLUGIN_DIR"
   install_plugin memory.js || true
@@ -365,41 +365,41 @@ if [ "$WITH_MEMORY" -eq 1 ]; then
   DIGEST="$OC_DIR/bin/session-digest.py"
   DIGEST_SRC="$STAGE/plugins/session-digest.py"
   if [ ! -s "$DIGEST_SRC" ]; then
-    fetch_file "plugins/session-digest.py" "$DIGEST_SRC" || say "${c_warn}gagal mengunduh session-digest.py${c_off}"
+    fetch_file "plugins/session-digest.py" "$DIGEST_SRC" || say "${c_warn}failed to download session-digest.py${c_off}"
   fi
   if [ -s "$DIGEST_SRC" ]; then
     cp "$DIGEST_SRC" "$DIGEST"
     sed -i "1s|^#!.*|#!$PREFIX/bin/python3|" "$DIGEST"
     chmod 755 "$DIGEST"
-    say "Generator ringkasan sesi: $DIGEST"
+    say "Session summary generator: $DIGEST"
   fi
 
-  # Template hanya dipasang kalau belum ada — memori user tidak boleh tertimpa.
+  # Templates are only installed when missing — the user's memory must not be overwritten.
   for f in MEMORY.md AGENTS.md opencode.jsonc; do
     if [ -f "$OC_DIR/$f" ]; then
-      say "sudah ada, dilewati: $OC_DIR/$f"
+      say "already exists, skipped: $OC_DIR/$f"
       continue
     fi
     src="$STAGE/memory/$f"
     if [ ! -s "$src" ]; then
-      fetch_file "memory/$f" "$src" || { say "${c_warn}gagal mengambil memory/$f${c_off}"; continue; }
+      fetch_file "memory/$f" "$src" || { say "${c_warn}failed to fetch memory/$f${c_off}"; continue; }
     fi
     cp "$src" "$OC_DIR/$f"
     if [ "$f" = "opencode.jsonc" ]; then
       sed -i "s|/data/data/com.termux/files/home|$HOME|g" "$OC_DIR/$f"
     fi
   done
-  [ -f "$OC_DIR/RECENT.md" ] || printf '# RECENT\n\nBelum ada sesi tercatat.\n' >"$OC_DIR/RECENT.md"
+  [ -f "$OC_DIR/RECENT.md" ] || printf '# RECENT\n\nNo sessions recorded yet.\n' >"$OC_DIR/RECENT.md"
   if [ -x "$DIGEST" ]; then
     python3 "$DIGEST" >/dev/null 2>&1 || true
   fi
-  say "Memori/template, aturan, dan instructions siap di $OC_DIR"
+  say "Memory/templates, rules, and instructions are ready in $OC_DIR"
 
   if ! grep -q "_oc_refresh_digest" "$HOME/.bashrc" 2>/dev/null; then
     [ -f "$HOME/.bashrc" ] || : >"$HOME/.bashrc"
     cat >>"$HOME/.bashrc" <<'EOS'
 
-# --- segarkan ringkasan sesi sebelum opencode dibuka (install.sh) ---
+# --- refresh the session summary before opencode starts (install.sh) ---
 _oc_refresh_digest() {
   [ -x "$HOME/.config/opencode/bin/session-digest.py" ] || return 0
   python3 "$HOME/.config/opencode/bin/session-digest.py" >/dev/null 2>&1
@@ -407,14 +407,14 @@ _oc_refresh_digest() {
 opencode() { _oc_refresh_digest; command opencode "$@"; }
 opencode-v2() { _oc_refresh_digest; command opencode-v2 "$@"; }
 EOS
-    say "~/.bashrc: ringkasan sesi disegarkan otomatis"
+    say "~/.bashrc: session summary refreshes automatically"
   fi
 fi
 [ -n "$SELF_DIR" ] || rm -rf "$STAGE"
 
-say "${c_ok}opencode $GOT siap dipakai.${c_off}"
+say "${c_ok}opencode $GOT is ready to use.${c_off}"
 say ""
-say "Coba sekarang:   opencode"
-say "Cek versi:       opencode --version"
-say "Upgrade lagi:    bash install.sh --upgrade"
-say "Hapus:           bash uninstall.sh"
+say "Try it now:      opencode"
+say "Check version:   opencode --version"
+say "Upgrade again:   bash install.sh --upgrade"
+say "Remove:          bash uninstall.sh"
