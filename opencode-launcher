@@ -7,6 +7,8 @@
 #
 # Do not edit directly; use: https://github.com/kusnuzon/opencode-termux
 PREFIX="${PREFIX:-@PREFIX@}"
+# V1 has its own database: ignore XDG_* values inherited from a V2 shell.
+unset XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME
 export LD_LIBRARY_PATH="$PREFIX/glibc/lib:${LD_LIBRARY_PATH:-}"
 export SSL_CERT_FILE="$PREFIX/etc/tls/cert.pem"
 exec "$PREFIX/glibc/lib/ld-linux-aarch64.so.1" --library-path "$PREFIX/glibc/lib" "$PREFIX/share/opencode/opencode.real" "$@"
