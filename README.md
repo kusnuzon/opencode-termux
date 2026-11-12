@@ -1,183 +1,149 @@
-# opencode-termux
+# 🚀 OpenCode V1 for Termux (Android arm64)
 
-Installer for **opencode** (the terminal AI coding agent) on **Termux / Android**: one command, and it always tracks the latest official opencode release.
+Installs the **official opencode binary** on Termux with **one command** — and
+keeps following upstream releases, so you never install it by hand again.
 
-> The official `anomalyco/opencode` repo has **no `android/arm64` build**, and `npm i -g opencode-ai` **fails** on Termux.
-> This repo solves both problems: it installs the official binary in a form that runs on Android, **and** keeps it updated from upstream releases.
+> ⚠️ `npm i -g opencode-ai` fails on Termux (no `android/arm64` build) and the
+> official repo has no Android binary. This repo runs the official glibc binary
+> through Termux's glibc loader — nothing is recompiled or patched.
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/kusnuzon/opencode-termux/main/install.sh | bash
-```
-
-Done — `opencode` is ready to use.
-
-> To pass options through a pipe, use `bash -s -- <options>`:
-> `curl -fsSL https://raw.githubusercontent.com/kusnuzon/opencode-termux/main/install.sh | bash -s -- --upgrade`
-
----
-
-## Why this repo exists
+## ❓ Why this repo exists
 
 | Approach | Result on Termux |
 |---|---|
-| `npm i -g opencode-ai` | ❌ Fails — npm has no `android/arm64` binary |
-| `musl` build (`opencode-linux-arm64-musl.tar.gz`) | ❌ Fails — not fully static (needs `/lib/ld-musl-aarch64.so.1`), and Android has no `/etc/resolv.conf` |
-| Plain `linux-arm64` build | ❌ Fails — needs a glibc loader (`/lib64/ld-linux-aarch64.so.1`), while Android uses bionic |
-| **`linux-arm64` build + Termux glibc loader** | ✅ **What this repo uses** |
+| `npm i -g opencode-ai` | ❌ no `android/arm64` package |
+| musl build | ❌ not fully static, no `/etc/resolv.conf` on Android |
+| plain `linux-arm64` build | ❌ needs `/lib64/ld-linux-aarch64.so.1` (Android uses bionic) |
+| **`linux-arm64` + Termux glibc loader** | ✅ **what this repo does** |
 
-How it works: the official opencode binary (glibc) is executed through **Termux's glibc loader** (`$PREFIX/glibc/lib/ld-linux-aarch64.so.1`). So what ends up on your phone is still the **official opencode binary**, not a patched build.
+## 📦 Prerequisites
 
----
+Termux on Android **aarch64**, not root, ~700 MB free (glibc runtime + payload).
+Dependencies are installed by the script.
 
-## 1. Install (from scratch)
-
-Open Termux and run **one command**:
+## ⚡ 1-Click Install
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kusnuzon/opencode-termux/main/install.sh | bash
 ```
 
-What it does automatically:
+Pass options through the pipe with `bash -s --`:
 
-1. Installs base dependencies **first** (a fresh Termux is usable right away):
-   `curl tar unzip gzip coreutils ca-certificates jq python git sqlite wget
-   openssh gh nodejs yq shellcheck ncdu htop`, then optionally `tesseract
-   chromium` (+ `x11-repo`). Optional failures only produce a warning;
-   skip them with `--no-extra`.
-2. `pkg install glibc-repo` + `glibc` + `termux-exec-glibc` (glibc runtime — required).
-   If the glibc packages break `curl` (`cannot locate symbol SSL_set_quic_…`),
-   `curl`/`libcurl`/`openssl` are reinstalled automatically and downloads have
-   `wget`/`python` fallbacks.
-3. Launcher: it uses the dpkg `opencode` package (termuxvoid repo) **or** the launcher bundled with this repo, whichever is available
-4. `apt-mark hold opencode` → so `pkg upgrade` cannot overwrite the binary that was just installed
-5. Downloads the latest payload → installs it → **verifies** `opencode --version`
-6. If verification fails → the previous payload is restored automatically (rollback)
-7. Installs the `memory.js` + `session-title.js` plugins, then the memory templates
-   (`MEMORY.md`, `AGENTS.md`, `RECENT.md`) and the `~/.bashrc` hook — **existing
-   files are never overwritten**. Skip with `--no-plugin` / `--no-memory`.
+```bash
+… | bash -s -- --upgrade       # upgrade to the latest release
+… | bash -s -- --check         # status only, changes nothing
+… | bash -s -- --version 1.19.5  # pin a specific version
+```
 
 Check the result:
 
 ```bash
-opencode --version     # example: 1.19.3
-opencode               # start a session
+opencode --version
+opencode
 ```
 
-> Needs about 500 MB (glibc runtime) + about 180 MB (opencode payload).
+## 🧰 What the installer does
 
-### Cross-session memory (default)
+1. 📦 base dependencies first (`curl tar unzip gzip coreutils ca-certificates jq
+   python git sqlite wget openssh gh nodejs yq shellcheck ncdu htop`), optionally
+   `tesseract chromium` — optional failures only warn (`--no-extra` to skip)
+2. 🧬 glibc runtime (`glibc-repo`, `glibc`, `termux-exec-glibc`); if the glibc
+   packages break `curl`, it is reinstalled automatically
+3. 🚀 launcher into `$PREFIX/bin/opencode`
+4. 🔒 `apt-mark hold opencode` so `pkg upgrade` cannot overwrite the payload
+5. ⬇️ latest official payload → verify `opencode --version`
+6. ↩️ on failure the previous payload is restored automatically
+7. 🧠 plugins + memory templates (`--no-plugin` / `--no-memory` to skip)
 
-With no extra options, the installer already sets up:
+## 🧠 Cross-session memory (default)
 
 | File | Contents |
 |---|---|
-| `plugins/memory.js` → `~/.config/opencode/plugins/` | `memory_save` tool (V1 + V2) |
-| `plugins/session-title.js` → `~/.config/opencode/plugins/` | automatic session titles without calling a model |
-| `memory/MEMORY.md` → `~/.config/opencode/MEMORY.md` | empty template, filled in through `memory_save` |
-| `memory/AGENTS.md` → `~/.config/opencode/AGENTS.md` | working-rules template |
-| `memory/opencode.jsonc` → `~/.config/opencode/opencode.jsonc` | `instructions`: MEMORY.md + RECENT.md |
-| `plugins/session-digest.py` → `~/.config/opencode/bin/` | builds `RECENT.md` from the V1 + V2 databases |
+| `plugins/memory.js` | `memory_save` tool (V1 + V2) |
+| `plugins/session-title.js` | session titles without calling a model |
+| `memory/MEMORY.md` | long-term facts (template, filled by the tool) |
+| `memory/AGENTS.md` | working-rules template |
+| `memory/opencode.jsonc` | `instructions`: MEMORY.md + RECENT.md |
+| `plugins/session-digest.py` | builds `RECENT.md` from the session DBs |
 
-`MEMORY.md` holds long-term facts and `RECENT.md` summarizes recent sessions;
-both are loaded automatically at the start of a new session. Existing data is
-never lost — the installer skips memory files that already exist. To skip the
-setup: `--no-memory` (templates) or `--no-plugin` (plugins).
+`MEMORY.md` + `RECENT.md` are loaded automatically in every new session.
+Existing files are **never overwritten**.
 
----
-
-## 2. Upgrade to the latest version
+## ⬆️ Upgrade
 
 ```bash
 bash install.sh --upgrade     # or: bash upgrade.sh
-bash install.sh --check       # status only, changes nothing
+bash install.sh --check       # status only
 ```
 
-The script asks the GitHub API for `anomalyco/opencode/releases/latest`, then:
+Version matches upstream → does nothing. Newer version → back up the old payload
+to `~/backups/`, swap, verify, rollback on failure.
 
-- if the versions match → **does nothing** (safe to run on a schedule)
-- if a newer one exists → download → **back up the old version** to `~/backups/` → swap the payload → verify → **automatic rollback** on failure
-- you can install a specific version: `bash install.sh --version 1.19.3`
+## 🤖 Automatic mirror
 
-### Automatic updates without manual work
+A GitHub Actions workflow (`sync-upstream.yml`) runs daily (~03:17 UTC): checks
+`anomalyco/opencode/releases/latest`, updates `VERSION`, and publishes the mirror
+release `opencode-termux-<version>`. So the installer always has a fresh source.
 
-This repo ships a GitHub Actions workflow (`sync-upstream.yml`) that **every day** (around 03:17 UTC) checks upstream releases and then:
-
-1. downloads the latest `opencode-linux-arm64.tar.gz`
-2. updates the `VERSION` file
-3. publishes a **mirror Release** `opencode-termux-<version>` (payload + launcher)
-
-So `install.sh` always has a download source that is in sync with upstream, and `install.sh` itself always picks up the latest version whenever it runs.
-
----
-
-## 3. Uninstall
+## 🛠️ Manual install (no script)
 
 ```bash
-bash uninstall.sh            # remove payload + launcher
-bash uninstall.sh --purge    # also remove the opencode dpkg package + glibc runtime
-```
-
-Config and session history (`~/.config/opencode`, `~/.local/share/opencode`) are **not** removed.
-
----
-
-## 4. Manual (if you prefer no script)
-
-```bash
-# 1. glibc runtime
 pkg install glibc-repo
 pkg update && pkg install glibc termux-exec-glibc
 
-# 2. official payload
 mkdir -p $PREFIX/share/opencode
 curl -fL -o opencode.tar.gz \
-  https://github.com/anomalyco/opencode/releases/download/v1.19.3/opencode-linux-arm64.tar.gz
+  https://github.com/anomalyco/opencode/releases/download/v1.19.5/opencode-linux-arm64.tar.gz
 tar -xzf opencode.tar.gz -C $PREFIX/share/opencode
 mv $PREFIX/share/opencode/opencode $PREFIX/share/opencode/opencode.real
 chmod 755 $PREFIX/share/opencode/opencode.real
 
-# 3. launcher
 curl -fsSL -o $PREFIX/bin/opencode \
   https://raw.githubusercontent.com/kusnuzon/opencode-termux/main/opencode-launcher
 sed -i "s|@PREFIX@|$PREFIX|g" $PREFIX/bin/opencode
 chmod 755 $PREFIX/bin/opencode
-
-# 4. check
 opencode --version
 ```
 
----
+## 🩺 Troubleshooting
 
-## 5. Troubleshooting
-
-| Symptom | Cause | Fix |
-|---|---|---|
-| `cannot execute: required file not found` | Payload without a glibc loader | `pkg install glibc termux-exec-glibc`, then `bash install.sh --upgrade` |
-| `bash: opencode: command not found` | Launcher missing | `curl -fsSL .../opencode-launcher \| sed "s\|@PREFIX@\|$PREFIX\|g" > $PREFIX/bin/opencode` |
-| An old version reappears after `pkg upgrade` | The dpkg package overwrote the payload | `bash install.sh --upgrade` (this repo already runs `apt-mark hold`) |
-| TLS error / `unable to verify` | `SSL_CERT_FILE` not set | The launcher already sets `SSL_CERT_FILE=$PREFIX/etc/tls/cert.pem`; make sure `ca-certificates` is installed |
-| DNS fails | Android has no `/etc/resolv.conf` | The Termux glibc runtime already handles this; do **not** use the musl build |
-| `pkg install opencode` gives an old version | The termuxvoid repo updates slowly | `bash install.sh --upgrade` (the payload comes from the official release, not from dpkg) |
-
----
-
-## 6. Repo contents
-
-| File | Purpose |
+| Symptom | Fix |
 |---|---|
-| `install.sh` | Main installer: deps → glibc runtime → launcher → latest payload → verification → plugins/memory |
-| `plugins/` | `memory.js`, `session-title.js`, `session-digest.py` |
-| `memory/` | Templates for `MEMORY.md`, `AGENTS.md`, `opencode.jsonc` |
-| `upgrade.sh` | Alias for `install.sh --upgrade` |
-| `uninstall.sh` | Removes opencode (add `--purge` to drop the glibc packages too) |
-| `opencode-launcher` | Launcher: runs the glibc binary through the Termux glibc loader |
-| `VERSION` | The opencode version currently mirrored (updated automatically by Actions) |
-| `.github/workflows/sync-upstream.yml` | Daily cron: check upstream → mirror → publish a Release |
+| `cannot execute: required file not found` | `pkg install glibc termux-exec-glibc`, then `install.sh --upgrade` |
+| `bash: opencode: command not found` | reinstall the launcher with `install.sh --upgrade` |
+| old version comes back after `pkg upgrade` | `install.sh --upgrade` (hold is already set) |
+| TLS error / `unable to verify` | install `ca-certificates`; the launcher sets `SSL_CERT_FILE` |
+| DNS fails | do **not** use the musl build — the Termux glibc runtime handles this |
+| `pkg install opencode` gives an old build | `install.sh --upgrade` (payload comes from the official release) |
 
----
+## 🗑️ Uninstall
 
-## 7. Notes & license
+```bash
+bash uninstall.sh            # remove payload + launcher
+bash uninstall.sh --purge    # also remove the opencode package + glibc runtime
+```
 
-- **Not officially affiliated** with opencode. Only the binary payload from the `anomalyco/opencode` GitHub Releases is mirrored.
-- Every installer/launcher in this repo is under the **MIT License**.
-- When a newer opencode release appears, `install.sh` follows it automatically — no manual update needed.
+Sessions and config (`~/.config/opencode`, `~/.local/share/opencode`) stay.
+
+## 📁 Repo contents
+
+```
+install.sh          deps → glibc → launcher → payload → verify → plugins
+upgrade.sh          alias for install.sh --upgrade
+uninstall.sh        remove the payload (--purge drops glibc too)
+opencode-launcher   runs the glibc binary through the Termux loader
+plugins/            memory.js, session-title.js, session-digest.py
+memory/             MEMORY.md, AGENTS.md, opencode.jsonc templates
+VERSION             mirrored opencode version (updated by Actions)
+```
+
+## ⚠️ Notes
+
+- **Not officially affiliated** with opencode; only the official binary payload
+  is mirrored.
+- V1 and V2 can coexist — use [opencode-termux-v2](https://github.com/kusnuzon/opencode-termux-v2)
+  for the 2.x line, or [codemux](https://github.com/kusnuzon/codemux) to manage both.
+
+## 📜 License
+
+[MIT](LICENSE)
