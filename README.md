@@ -64,7 +64,9 @@ opencode
 | `memory/MEMORY.md` | long-term facts (template, filled by the tool) |
 | `memory/AGENTS.md` | working-rules template |
 | `memory/opencode.jsonc` | `instructions`: MEMORY.md + RECENT.md |
-| `plugins/session-digest.py` | builds `RECENT.md` from the session DBs |
+| `plugins/session-digest.py` | builds `RECENT.md` (recent sessions + open items) |
+| `plugins/update-notice.js` | shows a codemux update notice inside the session |
+| `plugins/kuota.py` → `kuota` | estimates the remaining free-model quota |
 
 `MEMORY.md` + `RECENT.md` are loaded automatically in every new session.
 Existing files are **never overwritten**.
@@ -132,7 +134,8 @@ install.sh          deps → glibc → launcher → payload → verify → plugi
 upgrade.sh          alias for install.sh --upgrade
 uninstall.sh        remove the payload (--purge drops glibc too)
 opencode-launcher   runs the glibc binary through the Termux loader
-plugins/            memory.js, session-title.js, session-digest.py
+plugins/            memory.js, session-title.js, update-notice.js,
+                    session-digest.py, kuota.py
 memory/             MEMORY.md, AGENTS.md, opencode.jsonc templates
 VERSION             mirrored opencode version (updated by Actions)
 ```

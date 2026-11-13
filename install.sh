@@ -358,6 +358,7 @@ else
   mkdir -p "$PLUGIN_DIR"
   install_plugin memory.js || true
   install_plugin session-title.js || true
+  install_plugin update-notice.js || true
 fi
 
 if [ "$WITH_MEMORY" -eq 1 ]; then
@@ -372,6 +373,21 @@ if [ "$WITH_MEMORY" -eq 1 ]; then
     sed -i "1s|^#!.*|#!$PREFIX/bin/python3|" "$DIGEST"
     chmod 755 "$DIGEST"
     say "Session summary generator: $DIGEST"
+  fi
+
+  # kuota: estimated remaining free-model quota (reads the local databases only)
+  KUOTA="$OC_DIR/bin/kuota"
+  KUOTA_SRC="$STAGE/plugins/kuota.py"
+  if [ ! -s "$KUOTA_SRC" ]; then
+    fetch_file "plugins/kuota.py" "$KUOTA_SRC" || say "${c_warn}failed to download kuota.py${c_off}"
+  fi
+  if [ -s "$KUOTA_SRC" ]; then
+    cp "$KUOTA_SRC" "$KUOTA"
+    sed -i "1s|^#!.*|#!$PREFIX/bin/python3|" "$KUOTA"
+    chmod 755 "$KUOTA"
+    mkdir -p "$PREFIX/bin"
+    ln -sf "$KUOTA" "$PREFIX/bin/kuota"
+    say "Quota estimator: $KUOTA (command: kuota)"
   fi
 
   # Templates are only installed when missing — the user's memory must not be overwritten.
