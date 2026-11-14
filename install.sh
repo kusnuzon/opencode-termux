@@ -159,7 +159,7 @@ prune_backups() {
 # ---------- base dependencies (before touching GitHub) ----------------------
 # Fresh Termux: these base packages must exist first, and curl can be broken by
 # the glibc packages ("cannot locate symbol SSL_set_quic_tls_early_data_enabled").
-BASE_PKGS="curl tar unzip gzip coreutils ca-certificates jq python git sqlite wget openssh gh nodejs yq shellcheck ncdu htop"
+BASE_PKGS="curl tar unzip gzip coreutils ca-certificates jq python git sqlite wget openssh gh ncdu htop"
 # Optional/large: needs the x11-repo; a failure is only a warning, not an error.
 EXTRA_PKGS="tesseract chromium"
 
@@ -221,7 +221,7 @@ if [ "$MODE" = "dry-run" ]; then
   step "Plan (dry-run, nothing will be changed)"
   say "1. pkg install $BASE_PKGS (run automatically, curl healed if broken)"
   say "2. pkg install glibc-repo glibc termux-exec-glibc"
-  say "3. launcher: the opencode dpkg package (termuxvoid repo) or opencode-launcher from this repo"
+  say "3. launcher: opencode-launcher from this repo (small script, no clang/LLVM)"
   say "4. download $ASSET for $LATEST_NOV"
   say "   mirror  : https://github.com/$REPO/releases/download/opencode-termux-$LATEST_NOV/$ASSET"
   say "   upstream: https://github.com/$UPSTREAM/releases/download/$LATEST/$ASSET"
@@ -246,15 +246,12 @@ have_loader || die "glibc loader not found: $PREFIX/glibc/lib/ld-linux-aarch64.s
 heal_curl || say "! curl is still broken after glibc"
 
 step "3/6 Launcher"
-if dpkg -s opencode >/dev/null 2>&1 && [ -x "$LAUNCHER" ]; then
-  say "Using the launcher from the dpkg package (termuxvoid repo)."
-  apt-mark hold opencode || true
-  say "apt-mark hold opencode -> safe from 'pkg upgrade' overwriting the payload."
-elif command -v pkg >/dev/null 2>&1; then
+# Use the small script launcher in this repo. The old termuxvoid `opencode`
+# dpkg package also worked, but it depends on clang + LLVM (~500 MB) that the
+# runtime never needs. Unless OPENCODE_USE_DPKG=1 is set, an existing dpkg
+# install is migrated automatically.
+if [ "${OPENCODE_USE_DPKG:-0}" = "1" ] && command -v pkg >/dev/null 2>&1; then
   TL="$PREFIX/etc/apt/sources.list.d/termuxvoid.list"
-  # [trusted=yes] is required: the termuxvoid repo does not sign InRelease, and
-  # without it `pkg update` fails with: "NO_PUBKEY … repository is not signed".
-  # Old files (written by earlier versions without trusted=yes) are repaired too.
   if [ -f "$TL" ]; then
     if ! grep -q 'trusted=yes' "$TL"; then
       cp "$TL" "$TL.bak-$(date +%Y%m%d-%H%M%S)"
@@ -266,18 +263,21 @@ elif command -v pkg >/dev/null 2>&1; then
   fi
   apt_update || say "! warning: 'pkg update' failed after adding the termuxvoid repo"
   pkg install -y opencode || true
-  # The termuxvoid repo does not sign InRelease -> every `pkg update` prints
-  # "NO_PUBKEY". Once the package is in place the repo is removed again so later
-  # updates stay clean (the installed package + apt-mark hold remain).
   if dpkg -s opencode >/dev/null 2>&1; then
     rm -f "$TL"
+    apt-mark hold opencode || true
     apt_update || true
   fi
-  if [ ! -x "$LAUNCHER" ]; then
-    say "The termuxvoid package is unavailable, using the launcher bundled with this repo."
-    install_our_launcher
-  fi
+fi
+if [ "${OPENCODE_USE_DPKG:-0}" = "1" ] && dpkg -s opencode >/dev/null 2>&1; then
+  say "Using the launcher from the opencode dpkg package (OPENCODE_USE_DPKG=1)."
 else
+  if dpkg -s opencode >/dev/null 2>&1; then
+    say "Migrating away from the opencode dpkg launcher (frees clang/LLVM, ~500 MB)."
+    apt-mark unhold opencode 2>/dev/null || true
+    pkg remove -y opencode >/dev/null 2>&1 || apt-get remove -y opencode >/dev/null 2>&1 || true
+    apt-get autoremove -y >/dev/null 2>&1 || true
+  fi
   install_our_launcher
 fi
 
