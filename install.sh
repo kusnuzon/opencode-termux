@@ -221,7 +221,7 @@ if [ "$MODE" = "dry-run" ]; then
   step "Plan (dry-run, nothing will be changed)"
   say "1. pkg install $BASE_PKGS (run automatically, curl healed if broken)"
   say "2. pkg install glibc-repo glibc termux-exec-glibc"
-  say "3. launcher: opencode-launcher from this repo (small script, no clang/LLVM)"
+  say "3. launcher: opencode dpkg package from the termuxvoid repo (official payload + glibc wrapper)"
   say "4. download $ASSET for $LATEST_NOV"
   say "   mirror  : https://github.com/$REPO/releases/download/opencode-termux-$LATEST_NOV/$ASSET"
   say "   upstream: https://github.com/$UPSTREAM/releases/download/$LATEST/$ASSET"
@@ -246,40 +246,39 @@ have_loader || die "glibc loader not found: $PREFIX/glibc/lib/ld-linux-aarch64.s
 heal_curl || say "! curl is still broken after glibc"
 
 step "3/6 Launcher"
-# Use the small script launcher in this repo. The old termuxvoid `opencode`
-# dpkg package also worked, but it depends on clang + LLVM (~500 MB) that the
-# runtime never needs. Unless OPENCODE_USE_DPKG=1 is set, an existing dpkg
-# install is migrated automatically.
-if [ "${OPENCODE_USE_DPKG:-0}" = "1" ] && command -v pkg >/dev/null 2>&1; then
+# V1 must come from the TermuxVoid APT repository: its opencode package downloads
+# the official upstream payload, verifies the sha256, and compiles a tiny C
+# wrapper for the Termux glibc loader. That wrapper is the method proven to work
+# on this device, so it is the default. OPENCODE_USE_SCRIPT=1 opts into the small
+# shell launcher bundled with this repo instead (no clang/LLVM dependency).
+if [ "${OPENCODE_USE_SCRIPT:-0}" = "1" ] || ! command -v pkg >/dev/null 2>&1; then
+  install_our_launcher
+else
   TL="$PREFIX/etc/apt/sources.list.d/termuxvoid.list"
-  if [ -f "$TL" ]; then
-    if ! grep -q 'trusted=yes' "$TL"; then
-      cp "$TL" "$TL.bak-$(date +%Y%m%d-%H%M%S)"
-      printf 'deb [arch=all trusted=yes] https://termuxvoid.github.io/repo termuxvoid main\n' > "$TL"
-      say "termuxvoid sources.list repaired (trusted=yes added)"
-    fi
-  else
+  KEYDIR="$PREFIX/etc/apt/trusted.gpg.d"
+  mkdir -p "$(dirname "$TL")" "$KEYDIR"
+  printf 'deb [arch=all] https://termuxvoid.github.io/repo termuxvoid main\n' > "$TL"
+  say "termuxvoid repo configured (signed)."
+  if ! download_url "https://github.com/termuxvoid/repo/raw/main/assets/termuxvoid.gpg" "$KEYDIR/termuxvoid.gpg" 2>/dev/null; then
+    say "! warning: could not download the termuxvoid GPG key; using trusted=yes for this install"
     printf 'deb [arch=all trusted=yes] https://termuxvoid.github.io/repo termuxvoid main\n' > "$TL"
   fi
   apt_update || say "! warning: 'pkg update' failed after adding the termuxvoid repo"
+  # dpkg refuses/warns when an unowned launcher sits at the same path.
+  if [ -e "$LAUNCHER" ] && ! dpkg -S "$LAUNCHER" >/dev/null 2>&1; then
+    rm -f "$LAUNCHER"
+  fi
   pkg install -y opencode || true
   if dpkg -s opencode >/dev/null 2>&1; then
-    rm -f "$TL"
     apt-mark hold opencode || true
-    apt_update || true
+    say "opencode $(dpkg-query -W -f='${Version}' opencode 2>/dev/null || true) installed from termuxvoid."
+    say "apt-mark hold opencode -> safe from 'pkg upgrade' overwriting the payload."
+  else
+    say "! termuxvoid package unavailable; falling back to the repo script launcher."
+    install_our_launcher
   fi
 fi
-if [ "${OPENCODE_USE_DPKG:-0}" = "1" ] && dpkg -s opencode >/dev/null 2>&1; then
-  say "Using the launcher from the opencode dpkg package (OPENCODE_USE_DPKG=1)."
-else
-  if dpkg -s opencode >/dev/null 2>&1; then
-    say "Migrating away from the opencode dpkg launcher (frees clang/LLVM, ~500 MB)."
-    apt-mark unhold opencode 2>/dev/null || true
-    pkg remove -y opencode >/dev/null 2>&1 || apt-get remove -y opencode >/dev/null 2>&1 || true
-    apt-get autoremove -y >/dev/null 2>&1 || true
-  fi
-  install_our_launcher
-fi
+CUR="$(installed_version)"; [ -n "$CUR" ] || CUR="$(payload_version)"
 
 if [ "${CUR:-}" = "$LATEST_NOV" ] && [ -x "$PAYLOAD" ]; then
   step "4/6 Payload"

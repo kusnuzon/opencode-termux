@@ -49,10 +49,11 @@ opencode
    `tesseract chromium` — optional failures only warn (`--no-extra` to skip)
 2. 🧬 glibc runtime (`glibc-repo`, `glibc`, `termux-exec-glibc`); if the glibc
    packages break `curl`, it is reinstalled automatically
-3. 🚀 small script launcher into `$PREFIX/bin/opencode` (no clang/LLVM toolchain)
-4. 🔁 migrates an old `opencode` dpkg install to that launcher (set
-   `OPENCODE_USE_DPKG=1` to keep the dpkg variant instead)
-5. ⬇️ latest official payload → verify `opencode --version`
+3. 🚀 `opencode` package from the **TermuxVoid** APT repo (official payload +
+   sha256 check + a compiled glibc wrapper); `OPENCODE_USE_SCRIPT=1` switches to
+   the small shell launcher bundled here
+4. 🔒 `apt-mark hold opencode` so `pkg upgrade` cannot overwrite the payload
+5. ⬇️ if TermuxVoid lags upstream, the newer official payload → verify `opencode --version`
 6. ↩️ on failure the previous payload is restored automatically
 7. 🧠 plugins + memory templates (`--no-plugin` / `--no-memory` to skip)
 
