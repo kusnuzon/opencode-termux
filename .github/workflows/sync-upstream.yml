@@ -1,8 +1,8 @@
 name: Sync upstream opencode
 
-# Memantau versi resmi opencode (anomalyco/opencode) lalu memirror payload
-# linux-arm64 + launcher Termux ke Release repo ini, sehingga
-# `install.sh` selalu punya sumber unduhan yang sinkron dengan upstream.
+# Track the official opencode release (anomalyco/opencode) and mirror the
+# linux-arm64 payload plus the Termux launcher into this repo's Releases, so
+# `install.sh` always has a download source that matches upstream.
 
 on:
   schedule:
@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag upstream (opsional, mis. v1.19.3). Kosongkan = pakai latest.'
+        description: 'Upstream tag (optional, e.g. v1.19.3). Empty = use latest.'
         required: false
 
 permissions:
@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - id: meta
-        name: Tentukan versi upstream
+        name: Resolve the upstream version
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

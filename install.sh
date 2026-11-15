@@ -36,7 +36,47 @@ WITH_MEMORY=1
 
 c_ok=$'\033[1;32m'; c_warn=$'\033[1;33m'; c_err=$'\033[1;31m'
 c_b=$'\033[1;36m'; c_off=$'\033[0m'
-step() { printf '\n%s=== %s ===%s\n' "$c_b" "$1" "$c_off"; }
+
+# --- progress-bar begin (synced from codemux/lib/progress-bar.sh) ---
+# progress_bar <percent> [width] [label] — plain ASCII bar + percentage.
+# Out-of-range and non-numeric input is clamped, never an error: the callers
+# use it inside command substitution, where an error would print garbage.
+progress_bar() {
+  local pct="${1:-0}" width="${2:-24}" label="${3:-}"
+  local filled blank bar dash
+  [[ "$pct" =~ ^[0-9]+$ ]] || pct=0
+  [ "$pct" -lt 0 ] && pct=0
+  [ "$pct" -gt 100 ] && pct=100
+  [ "$width" -gt 0 ] 2>/dev/null || width=24
+  filled=$((pct * width / 100))
+  blank=$((width - filled))
+  printf -v bar '%*s' "$filled" ''
+  printf -v dash '%*s' "$blank" ''
+  bar="${bar// /#}"
+  dash="${dash// /-}"
+  printf '[%s%s] %3d%%' "$bar" "$dash" "$pct"
+  [ -n "$label" ] && printf '  %s' "$label"
+  return 0
+}
+
+# progress_step <current> <total> <label> — a numbered bar line.
+progress_step() {
+  progress_bar "$((10#${1:-0} * 100 / 10#${2:-1}))" 24 "${1:-0}/${2:-0} ${3:-}"
+}
+# --- progress-bar end ---
+
+step() {
+  local title="$1" pct
+  if [[ "$title" =~ ^([0-9]+)/([0-9]+) ]]; then
+    pct=$((10#${BASH_REMATCH[1]} * 100 / 10#${BASH_REMATCH[2]}))
+    printf '\n%s' "$c_b"
+    progress_bar "$pct" 24 "$title"
+    printf '%s' "$c_off"
+  else
+    printf '\n%s=== %s ===%s\n' "$c_b" "$title" "$c_off"
+  fi
+}
+
 say()  { printf '%s\n' "$*"; }
 die()  { printf '%s%s%s\n' "$c_err" "$*" "$c_off" >&2; exit 1; }
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
@@ -72,20 +112,30 @@ api_get() {
   fi
 }
 
-# download_url <url> <dest> [accept] — curl → wget → python.
-# Background: the glibc packages on Termux can break curl with
-# "cannot locate symbol SSL_set_quic_tls_early_data_enabled"; without this
-# fallback every later download would fail too.
+# download_url <url> <dest> [accept] [progress] — curl → wget → python.
+# progress=1 shows curl's bar + percentage on a terminal (used for the big
+# payload). A partial curl download is never accepted: a timeout can leave a
+# non-empty .part file, and the checksum would then fail later.
 download_url() {
-  local url="$1" dest="$2" accept="${3:-}" part="$2.part"
+  local url="$1" dest="$2" accept="${3:-}" progress="${4:-0}" part="$2.part" rc=0
   mkdir -p "$(dirname "$dest")" || return 1
   rm -f "$part"
-  if [ -n "$accept" ]; then
-    curl -fsSL --max-time 300 -H "Accept: $accept" "$url" -o "$part" 2>/dev/null
+  if [ "$progress" = "1" ] && [ -t 2 ]; then
+    if [ -n "$accept" ]; then
+      curl -fL --progress-bar --max-time 900 -H "Accept: $accept" "$url" -o "$part"
+    else
+      curl -fL --progress-bar --max-time 900 "$url" -o "$part"
+    fi
+    rc=$?
   else
-    curl -fsSL --max-time 300 "$url" -o "$part" 2>/dev/null
+    if [ -n "$accept" ]; then
+      curl -fsSL --max-time 900 -H "Accept: $accept" "$url" -o "$part" 2>/dev/null
+    else
+      curl -fsSL --max-time 900 "$url" -o "$part" 2>/dev/null
+    fi
+    rc=$?
   fi
-  if [ -s "$part" ]; then mv -f "$part" "$dest"; return 0; fi
+  if [ "$rc" -eq 0 ] && [ -s "$part" ]; then mv -f "$part" "$dest"; return 0; fi
   rm -f "$part"
   if command -v wget >/dev/null 2>&1 && wget -q --timeout=60 -O "$part" "$url" >/dev/null 2>&1 && [ -s "$part" ]; then
     mv -f "$part" "$dest"; return 0
@@ -290,11 +340,11 @@ else
   trap 'rm -rf "$tmpdir"' EXIT
   MIRROR_URL="https://github.com/$REPO/releases/download/opencode-termux-$LATEST_NOV/$ASSET"
   UP_URL="https://github.com/$UPSTREAM/releases/download/$LATEST/$ASSET"
-  if download_url "$MIRROR_URL" "$tmpdir/pkg.tar.gz"; then
+  if download_url "$MIRROR_URL" "$tmpdir/pkg.tar.gz" "" 1; then
     say "Source: mirror in repo $REPO"
   else
     say "Mirror unavailable, fetching from upstream..."
-    download_url "$UP_URL" "$tmpdir/pkg.tar.gz" || die "Failed to download $UP_URL"
+    download_url "$UP_URL" "$tmpdir/pkg.tar.gz" "" 1 || die "Failed to download $UP_URL"
   fi
   tar -xzf "$tmpdir/pkg.tar.gz" -C "$tmpdir" || die "Corrupt archive."
   # the file inside the archive may be "opencode" (upstream release) or
