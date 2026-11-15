@@ -60,7 +60,10 @@ opencode
 4. 🔒 `apt-mark hold opencode` so `pkg upgrade` cannot overwrite the payload
 5. ⬇️ if TermuxVoid lags upstream, the newer official payload → verify `opencode --version`
 6. ↩️ on failure the previous payload is restored automatically
-7. 🧠 plugins + memory templates (`--no-plugin` / `--no-memory` to skip)
+7. 🎨 `~/.tmux.conf`: a managed block with a dark status bar + `extended-keys on`
+   (`csi-u`, what pi needs). Your own lines outside the markers are kept and the
+   old file is backed up as `~/.tmux.conf.bak-tmuxconf-*`
+8. 🧠 plugins + memory templates (`--no-plugin` / `--no-memory` to skip)
 
 Every numbered step prints a bar (`[############------------]  50%  3/6 Launcher`),
 and the payload download shows curl's own percentage — a slow mobile line never
