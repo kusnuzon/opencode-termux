@@ -209,7 +209,7 @@ prune_backups() {
 # ---------- base dependencies (before touching GitHub) ----------------------
 # Fresh Termux: these base packages must exist first, and curl can be broken by
 # the glibc packages ("cannot locate symbol SSL_set_quic_tls_early_data_enabled").
-BASE_PKGS="curl tar unzip gzip coreutils ca-certificates jq python git sqlite wget openssh gh ncdu htop"
+BASE_PKGS="curl tar unzip gzip coreutils ca-certificates jq python git sqlite wget openssh gh ncdu htop tmux"
 # Optional/large: needs the x11-repo; a failure is only a warning, not an error.
 EXTRA_PKGS="tesseract chromium"
 
