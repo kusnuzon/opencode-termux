@@ -493,7 +493,7 @@ opencode-v2() {
   return "$rc"
 }
 EOS
-    say "~/.bashrc: session summary refreshes automatically"
+    say '$HOME/.bashrc: session summary refreshes automatically'
   fi
 fi
 [ -n "$SELF_DIR" ] || rm -rf "$STAGE"
