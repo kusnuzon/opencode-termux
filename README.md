@@ -24,8 +24,13 @@ Dependencies are installed by the script.
 ## ⚡ 1-Click Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kusnuzon/opencode-termux/main/install.sh | bash
+( curl -fsSL -H "Accept: application/vnd.github.raw" \
+    https://api.github.com/repos/kusnuzon/opencode-termux/contents/install.sh \
+  || curl -fsSL https://raw.githubusercontent.com/kusnuzon/opencode-termux/main/install.sh ) | bash
 ```
+
+> The API is tried first (fresh content), with a raw fallback for when the
+> anonymous 60-requests/hour limit returns HTTP 403. From a clone: `./install.sh`.
 
 Pass options through the pipe with `bash -s --`:
 
@@ -56,6 +61,10 @@ opencode
 5. ⬇️ if TermuxVoid lags upstream, the newer official payload → verify `opencode --version`
 6. ↩️ on failure the previous payload is restored automatically
 7. 🧠 plugins + memory templates (`--no-plugin` / `--no-memory` to skip)
+
+Every numbered step prints a bar (`[############------------]  50%  3/6 Launcher`),
+and the payload download shows curl's own percentage — a slow mobile line never
+looks frozen.
 
 ## 🧠 Cross-session memory (default)
 
@@ -109,6 +118,30 @@ chmod 755 $PREFIX/bin/opencode
 opencode --version
 ```
 
+## 🧪 Tests
+
+The installer only breaks in ways a dry run cannot see: a `curl` that exits 28
+after writing half a payload, a fallback that silently gives up. `tests/download.sh`
+pins those with fake `curl`/`wget`/`python` in a sandbox `PATH`:
+
+```bash
+bash tests/download.sh
+```
+
+| Case | Expected |
+|---|---|
+| clean download | payload written, no `.part` left |
+| HTTP 404 from curl | wget fallback takes over |
+| curl timeout (partial body) | partial file rejected, wget used |
+| curl + wget fail | python fallback writes the file |
+| everything fails | exit 1, no `dest`, no `.part` |
+| unwritable destination | clean failure, no crash |
+
+CI (`.github/workflows/ci.yml`) runs this plus `shellcheck` and `bash -n` on every
+push and pull request. The ASCII progress bar is a synced copy of
+`codemux/lib/progress-bar.sh` — edit it there and run
+`bash codemux/tools/sync-progress-bar.sh`, or CI reports drift.
+
 ## 🩺 Troubleshooting
 
 | Symptom | Fix |
@@ -139,6 +172,8 @@ opencode-launcher   runs the glibc binary through the Termux loader
 plugins/            memory.js, session-title.js, update-notice.js,
                     session-digest.py, kuota.py
 memory/             MEMORY.md, AGENTS.md, opencode.jsonc templates
+tests/download.sh   download/failure cases (fake curl, wget, python)
+.github/workflows/  ci.yml (shellcheck + tests), sync-upstream.yml (daily mirror)
 VERSION             mirrored opencode version (updated by Actions)
 ```
 
