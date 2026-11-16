@@ -19,13 +19,18 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
 
       - name: shellcheck
-        run: shellcheck -S warning install.sh uninstall.sh upgrade.sh tests/*.sh
+        run: shellcheck -S warning install.sh uninstall.sh upgrade.sh opencode-launcher tests/*.sh
 
       - name: syntax
         run: |
-          for f in install.sh uninstall.sh upgrade.sh tests/*.sh; do
+          for f in install.sh uninstall.sh upgrade.sh opencode-launcher tests/*.sh; do
             bash -n "$f"
           done
 
       - name: download fallbacks
         run: bash tests/download.sh
+
+      # The launcher runs the glibc build; a bionic LD_PRELOAD leaking into it is
+      # exactly what breaks V1 ("version `LIBC' not found"), so it is tested.
+      - name: launcher environment
+        run: bash tests/launcher.sh
