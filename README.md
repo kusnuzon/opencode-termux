@@ -50,7 +50,7 @@ opencode
 ## 🧰 What the installer does
 
 1. 📦 base dependencies first (`curl tar unzip gzip coreutils ca-certificates jq
-   python git sqlite wget openssh gh ncdu htop`), optionally
+   python git sqlite wget openssh gh ncdu htop tmux`), optionally
    `tesseract chromium` — optional failures only warn (`--no-extra` to skip)
 2. 🧬 glibc runtime (`glibc-repo`, `glibc`, `termux-exec-glibc`); if the glibc
    packages break `curl`, it is reinstalled automatically
@@ -84,6 +84,11 @@ looks frozen.
 
 `MEMORY.md` + `RECENT.md` are loaded automatically in every new session.
 Existing files are **never overwritten**.
+
+> `kuota` is this repo's standalone name. On a device managed by
+> [codemux](https://github.com/kusnuzon/codemux) the same tool ships as `quota`
+> (renamed in codemux 0.7.6) and the old file plus symlink are removed, so use
+> `quota` there. Both read the same local databases and print the same numbers.
 
 ## ⬆️ Upgrade
 
@@ -141,9 +146,11 @@ bash tests/download.sh
 | unwritable destination | clean failure, no crash |
 
 CI (`.github/workflows/ci.yml`) runs this plus `shellcheck` and `bash -n` on every
-push and pull request. The ASCII progress bar is a synced copy of
-`codemux/lib/progress-bar.sh` — edit it there and run
-`bash codemux/tools/sync-progress-bar.sh`, or CI reports drift.
+push and pull request. Two blocks are synced copies of the codemux repo — the
+ASCII progress bar (`codemux/lib/progress-bar.sh`) and the managed tmux config
+(`codemux/lib/tmux-config.sh`). Edit them there and run
+`bash codemux/tools/sync-progress-bar.sh` / `bash codemux/tools/sync-tmux-config.sh`,
+or CI reports drift.
 
 ## 🩺 Troubleshooting
 
