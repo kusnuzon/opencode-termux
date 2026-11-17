@@ -380,7 +380,10 @@ while [ $# -gt 0 ]; do
     --check)    MODE="check"; shift ;;
     --upgrade)  MODE="upgrade"; shift ;;
     --dry-run)  MODE="dry-run"; shift ;;
-    --version)  TARGET="${2:-}"; shift 2 ;;
+    --version)
+      TARGET="${2:-}"
+      [ -n "$TARGET" ] || die "--version needs a value, e.g. --version 1.19.5"
+      shift 2 ;;
     --no-plugin) NO_PLUGIN=1; shift ;;
     --no-extra) NO_EXTRA=1; shift ;;
     --no-memory) WITH_MEMORY=0; shift ;;
@@ -398,10 +401,10 @@ fi
 
 api_get() {
   if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-    gh api "$1" 2>/dev/null
-  else
-    curl -fsSL -H 'Accept: application/vnd.github+json' "$1"
+    gh api "$1" 2>/dev/null && return 0
   fi
+  # gh can still fail (rate limit, token expired) — curl is the fallback.
+  curl -fsSL -H 'Accept: application/vnd.github+json' "$1"
 }
 
 # download_url <url> <dest> [accept] [progress] — curl → wget → python.
@@ -540,7 +543,9 @@ ensure_base_deps() {
   fi
 }
 
-LATEST="$(latest_tag)"
+# Under pipefail a failed api_get would make the assignment below kill the
+# script through `set -e` before the friendly die message is reached.
+LATEST="$(latest_tag || true)"
 [ -n "$LATEST" ] || die "Failed to fetch the latest version from the GitHub API."
 LATEST_NOV="${LATEST#v}"
 CUR="$(installed_version)"
@@ -576,7 +581,8 @@ fi
 
 step "1/6 Base packages + dependencies"
 # Dependencies used by the built-in features (plugins, session digest, memory sync).
-# Installed up front so a fresh Termux does not fail halfway through.ensure_base_deps
+# Installed up front so a fresh Termux does not fail halfway through.
+ensure_base_deps
 
 # Dark tmux theme + the extended keys the pi TUI needs. The synced block lives
 # above; it only touches its own marked region and backs up whatever
@@ -723,19 +729,21 @@ if [ "$WITH_MEMORY" -eq 1 ]; then
     say "Session summary generator: $DIGEST"
   fi
 
-  # kuota: estimated remaining free-model quota (reads the local databases only)
-  KUOTA="$OC_DIR/bin/kuota"
-  KUOTA_SRC="$STAGE/plugins/kuota.py"
-  if [ ! -s "$KUOTA_SRC" ]; then
-    fetch_file "plugins/kuota.py" "$KUOTA_SRC" || say "${c_warn}failed to download kuota.py${c_off}"
+  # quota: estimated remaining free-model quota (reads the local databases only)
+  QUOTA="$OC_DIR/bin/quota"
+  QUOTA_SRC="$STAGE/plugins/quota.py"
+  if [ ! -s "$QUOTA_SRC" ]; then
+    fetch_file "plugins/quota.py" "$QUOTA_SRC" || say "${c_warn}failed to download quota.py${c_off}"
   fi
-  if [ -s "$KUOTA_SRC" ]; then
-    cp "$KUOTA_SRC" "$KUOTA"
-    sed -i "1s|^#!.*|#!$PREFIX/bin/python3|" "$KUOTA"
-    chmod 755 "$KUOTA"
+  if [ -s "$QUOTA_SRC" ]; then
+    cp "$QUOTA_SRC" "$QUOTA"
+    sed -i "1s|^#!.*|#!$PREFIX/bin/python3|" "$QUOTA"
+    chmod 755 "$QUOTA"
     mkdir -p "$PREFIX/bin"
-    ln -sf "$KUOTA" "$PREFIX/bin/kuota"
-    say "Quota estimator: $KUOTA (command: kuota)"
+    ln -sf "$QUOTA" "$PREFIX/bin/quota"
+    # Older releases shipped this as `kuota`; drop the stale copies.
+    rm -f "$PREFIX/bin/kuota" "$OC_DIR/bin/kuota"
+    say "Quota estimator: $QUOTA (command: quota)"
   fi
 
   # Templates are only installed when missing — the user's memory must not be overwritten.
@@ -770,17 +778,28 @@ _oc_refresh_digest() {
 }
 # V1 keeps its own database. Drop the V2 XDG_* values so starting V1 from a V2
 # shell cannot point it at the V2 database ("no session table", blank screen).
+# The repair always runs (not only on error): a clean TUI exit can still leave
+# the alt-screen up, which looks like a frozen terminal.
 _oc_tty_repair() {
-  [ -t 1 ] || return 0
-  stty sane 2>/dev/null
-  printf '\033[?1049l\033[?25h\033[0m'
+  local t=""
+  if { printf '' >/dev/tty; } 2>/dev/null; then t=/dev/tty
+  elif [ -t 1 ]; then t=/dev/stdout
+  else return 0
+  fi
+  # Close a control sequence a killed TUI left open, then undo XOFF (a stuck
+  # XOFF swallows every following byte, which also looks like a freeze).
+  printf '\007\033\\\033\\\017' >"$t" 2>/dev/null
+  stty sane 2>/dev/null <"$t" || true
+  # alt-screen, mouse, focus, bracketed paste, cursor-key mode, charset, then a
+  # full reset (RIS) as the hammer, and a forced redraw.
+  printf '\033[?1049l\033[?1000l\033[?1002l\033[?1003l\033[?1006l\033[?1004l\033[?2004l\033[?1l\033>\033c\033[!p\033[2J\033[H\033[0m\033[?25h' >"$t" 2>/dev/null
 }
 opencode() {
   _oc_refresh_digest
   local rc=0
   ( unset XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME; command opencode "$@" )
   rc=$?
-  [ "$rc" -ne 0 ] && _oc_tty_repair
+  _oc_tty_repair
   return "$rc"
 }
 opencode-v2() {
@@ -788,7 +807,7 @@ opencode-v2() {
   local rc=0
   command opencode-v2 "$@"
   rc=$?
-  [ "$rc" -ne 0 ] && _oc_tty_repair
+  _oc_tty_repair
   return "$rc"
 }
 EOS

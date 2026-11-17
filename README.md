@@ -80,15 +80,15 @@ looks frozen.
 | `memory/opencode.jsonc` | `instructions`: MEMORY.md + RECENT.md |
 | `plugins/session-digest.py` | builds `RECENT.md` (recent sessions + open items) |
 | `plugins/update-notice.js` | shows a codemux update notice inside the session |
-| `plugins/kuota.py` → `kuota` | estimates the remaining free-model quota |
+| `plugins/quota.py` → `quota` | estimates the remaining free-model quota |
 
 `MEMORY.md` + `RECENT.md` are loaded automatically in every new session.
 Existing files are **never overwritten**.
 
-> `kuota` is this repo's standalone name. On a device managed by
-> [codemux](https://github.com/kusnuzon/codemux) the same tool ships as `quota`
-> (renamed in codemux 0.7.6) and the old file plus symlink are removed, so use
-> `quota` there. Both read the same local databases and print the same numbers.
+> The command is `quota` everywhere now (renamed from `kuota` in codemux 0.7.6
+> and aligned in this repo). Installing it removes the old `kuota` file and
+> symlink. All variants read the same local databases and print the same
+> numbers.
 
 ## ⬆️ Upgrade
 
@@ -180,7 +180,7 @@ upgrade.sh          alias for install.sh --upgrade
 uninstall.sh        remove the payload (--purge drops glibc too)
 opencode-launcher   runs the glibc binary through the Termux loader
 plugins/            memory.js, session-title.js, update-notice.js,
-                    session-digest.py, kuota.py
+                    session-digest.py, quota.py
 memory/             MEMORY.md, AGENTS.md, opencode.jsonc templates
 tests/download.sh   download/failure cases (fake curl, wget, python)
 .github/workflows/  ci.yml (shellcheck + tests), sync-upstream.yml (daily mirror)
