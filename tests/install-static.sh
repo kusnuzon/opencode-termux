@@ -81,7 +81,7 @@ fi
 #    that used to kill the installer right after the payload was written, so
 #    verification, plugins and memory never ran. Run the real function.
 pb="$(sed -n '/^prune_backups() {/,/^}/p' install.sh)"
-tmpb="$(mktemp -d "$PREFIX/tmp/pb-test.XXXXXX" 2>/dev/null || mktemp -d)"
+tmpb="$(mktemp -d)"
 if BACKUP_DIR="$tmpb" KEEP_BACKUPS=2 bash -c \
   'set -Eeuo pipefail; eval "$1"; prune_backups; echo PRUNE-RAN' _ "$pb" | grep -q PRUNE-RAN; then
   ok "prune_backups survives an empty backup dir"
