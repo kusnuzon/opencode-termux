@@ -76,5 +76,26 @@ else
   bad "--version without a value is silently ignored"
 fi
 
+# 6. prune_backups must survive an empty backup dir: a fresh install has no
+#    backups, the glob matches nothing, ls exits 2 — and with set -euo pipefail
+#    that used to kill the installer right after the payload was written, so
+#    verification, plugins and memory never ran. Run the real function.
+pb="$(sed -n '/^prune_backups() {/,/^}/p' install.sh)"
+tmpb="$(mktemp -d "$PREFIX/tmp/pb-test.XXXXXX" 2>/dev/null || mktemp -d)"
+if BACKUP_DIR="$tmpb" KEEP_BACKUPS=2 bash -c \
+  'set -Eeuo pipefail; eval "$1"; prune_backups; echo PRUNE-RAN' _ "$pb" | grep -q PRUNE-RAN; then
+  ok "prune_backups survives an empty backup dir"
+else
+  bad "prune_backups kills the installer when no backups exist yet"
+fi
+rm -rf "$tmpb"
+
+# 7. upgrade.sh accepts the bare version its own usage documents.
+if grep -qF -- 'exec bash "$DIR/install.sh" --upgrade --version "$@"' upgrade.sh; then
+  ok "upgrade.sh maps a bare version to --version"
+else
+  bad "upgrade.sh rejects the bare version its own usage documents"
+fi
+
 printf '\n%s passed · %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

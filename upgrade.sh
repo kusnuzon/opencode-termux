@@ -9,4 +9,10 @@
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-exec bash "$DIR/install.sh" --upgrade "$@"
+# A bare version ("upgrade.sh 1.19.3", as the usage above promises) must map to
+# --version; flags pass through untouched. install.sh rejects unknown arguments,
+# so a bare version used to die there.
+case "${1:-}" in
+  "" | -*) exec bash "$DIR/install.sh" --upgrade "$@" ;;
+  *) exec bash "$DIR/install.sh" --upgrade --version "$@" ;;
+esac

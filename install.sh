@@ -523,8 +523,13 @@ install_our_launcher() {
 }
 
 prune_backups() {
-  ls -1t "$BACKUP_DIR"/opencode-[0-9]*.tar.gz 2>/dev/null | tail -n "+$((KEEP_BACKUPS + 1))" |
-    while read -r f; do rm -f "$f"; done
+  # `|| true` guards set -e/pipefail: with no backups yet (a fresh install)
+  # the glob matches nothing, ls exits 2, and that used to kill the installer
+  # right after the payload was written — before verification and plugins ran.
+  { ls -1t "$BACKUP_DIR"/opencode-[0-9]*.tar.gz 2>/dev/null |
+      tail -n "+$((KEEP_BACKUPS + 1))" |
+      while read -r f; do rm -f "$f"; done; } || true
+  return 0
 }
 
 # ---------- base dependencies (before touching GitHub) ----------------------
