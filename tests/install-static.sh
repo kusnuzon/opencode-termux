@@ -97,5 +97,42 @@ else
   bad "upgrade.sh rejects the bare version its own usage documents"
 fi
 
+# 8. prune_backups must also drop backups whose version was unknown
+#    ("opencode-old-*"): those are the oldest ones and a digits-only glob
+#    would leave them on disk forever. Run the real function.
+pb="$(sed -n '/^prune_backups() {/,/^}/p' install.sh)"
+tmpb="$(mktemp -d)"
+mkdir -p "$tmpb/bk"
+touch "$tmpb/bk/opencode-1.19.5-20260101.tar.gz" \
+  "$tmpb/bk/opencode-1.19.4-20260102.tar.gz" \
+  "$tmpb/bk/opencode-old-20251231.tar.gz"
+if BACKUP_DIR="$tmpb/bk" KEEP_BACKUPS=2 bash -c \
+  'set -Eeuo pipefail; eval "$1"; prune_backups' _ "$pb" &&
+  [ ! -e "$tmpb/bk/opencode-old-20251231.tar.gz" ]; then
+  ok "prune_backups also prunes opencode-old-* backups"
+else
+  bad "prune_backups leaves opencode-old-* backups forever"
+fi
+rm -rf "$tmpb"
+
+# 9. the python download fallback must stream to disk, not read the whole
+#    ~200 MB payload into RAM (a phone OOMs on that).
+du="$(sed -n '/^download_url()/,/^}/p' install.sh)"
+if printf '%s' "$du" | grep -q 'shutil.copyfileobj' &&
+   ! printf '%s' "$du" | grep -q 'urlopen(req, timeout=60).read()'; then
+  ok "python download fallback streams the payload to disk"
+else
+  bad "python download fallback reads the whole payload into RAM"
+fi
+
+# 10. the plugin stage must only reuse the directory next to install.sh when
+#     it is the real repo (has plugins/); otherwise a stale copy from an
+#     arbitrary directory would be installed silently.
+if grep -qF -- '[ -d "$SELF_DIR/plugins" ]' install.sh; then
+  ok "plugin stage is guarded against a stale non-repo directory"
+else
+  bad "plugin stage trusts any directory install.sh sits in"
+fi
+
 printf '\n%s passed · %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

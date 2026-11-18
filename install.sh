@@ -464,12 +464,14 @@ download_url() {
   rm -f "$part"
   if command -v python >/dev/null 2>&1; then
     python - "$url" "$part" "$accept" <<'PY' >/dev/null 2>&1 || true
-import sys, urllib.request
+import sys, shutil, urllib.request
 url, dest, accept = sys.argv[1], sys.argv[2], (sys.argv[3] if len(sys.argv) > 3 else "")
 req = urllib.request.Request(url, headers={"User-Agent": "opencode-termux"})
 if accept:
     req.add_header("Accept", accept)
-open(dest, "wb").write(urllib.request.urlopen(req, timeout=60).read())
+# stream to disk: the payload is ~200 MB and a phone cannot hold it in RAM
+with urllib.request.urlopen(req, timeout=60) as resp, open(dest, "wb") as out:
+    shutil.copyfileobj(resp, out, length=1 << 20)
 PY
     [ -s "$part" ] && { mv -f "$part" "$dest"; return 0; }
   fi
@@ -526,7 +528,10 @@ prune_backups() {
   # `|| true` guards set -e/pipefail: with no backups yet (a fresh install)
   # the glob matches nothing, ls exits 2, and that used to kill the installer
   # right after the payload was written — before verification and plugins ran.
-  { ls -1t "$BACKUP_DIR"/opencode-[0-9]*.tar.gz 2>/dev/null |
+  # The glob deliberately covers every backup name: when the old version could
+  # not be read the backup is called opencode-old-*, and a digits-only pattern
+  # would leave those (the oldest ones!) on disk forever.
+  { ls -1t "$BACKUP_DIR"/opencode-*.tar.gz 2>/dev/null |
       tail -n "+$((KEEP_BACKUPS + 1))" |
       while read -r f; do rm -f "$f"; done; } || true
   return 0
@@ -714,8 +719,18 @@ fi
 step "6/6 Plugins & cross-session memory"
 OC_DIR="$HOME/.config/opencode"
 PLUGIN_DIR="$OC_DIR/plugins"
-STAGE="$SELF_DIR"
-[ -n "$STAGE" ] || STAGE="$(mktemp -d "$PREFIX/tmp/oc-mem.XXXXXX")"
+# Use the checkout next to install.sh only when it really is the repo (has a
+# plugins/ dir). Otherwise a stale copy from an old run in an arbitrary
+# directory would be installed silently, and fresh downloads would litter that
+# directory — a throwaway temp dir is safer for both.
+STAGE=""
+STAGE_TMP=""
+if [ -n "$SELF_DIR" ] && [ -d "$SELF_DIR/plugins" ]; then
+  STAGE="$SELF_DIR"
+else
+  STAGE="$(mktemp -d "$PREFIX/tmp/oc-mem.XXXXXX")"
+  STAGE_TMP="$STAGE"
+fi
 
 install_plugin() {
   local name="$1" src="$STAGE/plugins/$1" dst="$PLUGIN_DIR/$1" backup
@@ -845,7 +860,7 @@ EOS
     say '$HOME/.bashrc: session summary refreshes automatically'
   fi
 fi
-[ -n "$SELF_DIR" ] || rm -rf "$STAGE"
+if [ -n "$STAGE_TMP" ]; then rm -rf "$STAGE_TMP"; fi
 
 say "${c_ok}opencode $GOT is ready to use.${c_off}"
 say ""
